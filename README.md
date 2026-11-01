@@ -3,7 +3,7 @@ README.md
 
 
 requirements.txt
-.gitignore
+
 run.py
 
 
