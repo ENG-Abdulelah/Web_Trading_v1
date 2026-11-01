@@ -760,7 +760,7 @@ def api_timemachine(signal_uid: str):
         "ok": True, "cached": False, "result": result.to_dict(),
     })
 
-     @app.route("/api/ping")
+@app.route("/api/ping")
 def api_ping():
     """Lightweight keep-alive endpoint for external cron."""
     return jsonify({"ok": True, "t": utcnow().isoformat()})
