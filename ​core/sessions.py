@@ -1,326 +1,477 @@
-# core/sessions.py
 """
-core/sessions.py
+Session manager for Web_Trading_v1.
 
-Tracks live trading sessions (Asian, London, New York) and market
-open/close times for the supported assets.
+Responsibilities:
+  • Detect active trading sessions (Sydney / Tokyo / London / NY).
+  • Detect active ICT kill zones (with style filtering).
+  • Hard-block trades during:
+       - weekends (with instrument-specific early closes)
+       - dead liquidity zones
+       - market transition windows
+  • Provide a single `.can_trade(style, symbol)` gate.
+  • Provide a `.snapshot()` dict for the web dashboard.
 
-Provides an automatic shutdown mechanism: when the current time falls
-outside the trading window for all enabled assets, registered callbacks
-are invoked so the bot can safely halt.
-
-All times are handled internally in UTC. Display helpers are provided
-for conversion to other timezones (e.g., via pytz).
+Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
 """
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
-from datetime import datetime, time, timedelta, timezone
-from enum import Enum
-from typing import Callable, Dict, Iterable, List, Optional
+from datetime import datetime, time, timezone
+from typing import Optional
 
-try:
-    from zoneinfo import ZoneInfo  # Python 3.9+
-except ImportError:  # pragma: no cover
-    from backports.zoneinfo import ZoneInfo  # type: ignore
-
-logger = logging.getLogger(__name__)
+import config
 
 
-# ---------------------------------------------------------------------
-# Enums & data models
-# ---------------------------------------------------------------------
-class SessionName(str, Enum):
-    ASIAN = "asian"
-    LONDON = "london"
-    NEW_YORK = "new_york"
+# =============================================================================
+# INTERNAL HELPERS
+# =============================================================================
+def _parse_hhmm(s: str) -> time:
+    """Parse 'HH:MM' into a naive time object."""
+    h, m = map(int, s.split(":"))
+    return time(hour=h, minute=m)
 
 
-@dataclass(frozen=True)
-class TradingSession:
-    """A recurring daily trading session defined in UTC."""
-
-    name: SessionName
-    open_utc: time
-    close_utc: time
-    # If True, the session spans midnight (close < open).
-    crosses_midnight: bool = False
-
-    def contains(self, when_utc: datetime) -> bool:
-        t = when_utc.timetz().replace(tzinfo=None)
-        if self.crosses_midnight:
-            return t >= self.open_utc or t < self.close_utc
-        return self.open_utc <= t < self.close_utc
-
-    def next_open_utc(self, when_utc: datetime) -> datetime:
-        today_open = when_utc.replace(
-            hour=self.open_utc.hour,
-            minute=self.open_utc.minute,
-            second=0,
-            microsecond=0,
-        )
-        if today_open <= when_utc:
-            today_open += timedelta(days=1)
-        return today_open
-
-    def next_close_utc(self, when_utc: datetime) -> datetime:
-        today_close = when_utc.replace(
-            hour=self.close_utc.hour,
-            minute=self.close_utc.minute,
-            second=0,
-            microsecond=0,
-        )
-        if today_close <= when_utc:
-            today_close += timedelta(days=1)
-        return today_close
+def _to_utc(dt: Optional[datetime]) -> datetime:
+    """Coerce any datetime to aware-UTC; default to now()."""
+    if dt is None:
+        return datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
-@dataclass(frozen=True)
-class MarketHours:
+def _in_window(t: time, start: time, end: time) -> bool:
     """
-    Per-asset market open/close.
-
-    weekdays = (0..6) where 0=Monday, 6=Sunday.
-    Times are UTC. cross_midnight handles sessions like "Sun 22:00 -> Fri 21:00".
+    Return True if `t` falls in [start, end).
+    Supports cross-midnight windows (e.g. 21:00 → 06:00).
     """
-
-    symbol: str
-    weekdays: tuple = (0, 1, 2, 3, 4)  # Mon-Fri by default
-    open_utc: time = time(0, 0)
-    close_utc: time = time(23, 59)
-    cross_midnight: bool = False
-
-    def is_open(self, when_utc: datetime) -> bool:
-        # NYSE-style: Sunday open at 22:00 counts as part of Monday window.
-        weekday = when_utc.weekday()
-        t = when_utc.timetz().replace(tzinfo=None)
-
-        if self.cross_midnight:
-            # Consider either "today after open" or "yesterday evening before close".
-            if weekday in self.weekdays and t >= self.open_utc:
-                return True
-            prev_weekday = (weekday - 1) % 7
-            if prev_weekday in self.weekdays and t < self.close_utc:
-                return True
-            return False
-
-        return weekday in self.weekdays and self.open_utc <= t < self.close_utc
-
-    def next_open_utc(self, when_utc: datetime) -> datetime:
-        probe = when_utc
-        for _ in range(8):  # at most a week forward
-            if probe.weekday() in self.weekdays:
-                candidate = probe.replace(
-                    hour=self.open_utc.hour,
-                    minute=self.open_utc.minute,
-                    second=0,
-                    microsecond=0,
-                )
-                if candidate > when_utc:
-                    return candidate
-            probe = (probe + timedelta(days=1)).replace(
-                hour=0, minute=0, second=0, microsecond=0
-            )
-        raise RuntimeError(f"No market open found within a week for {self.symbol}")
-
-    def next_close_utc(self, when_utc: datetime) -> datetime:
-        probe = when_utc
-        for _ in range(8):
-            if probe.weekday() in self.weekdays:
-                candidate = probe.replace(
-                    hour=self.close_utc.hour,
-                    minute=self.close_utc.minute,
-                    second=0,
-                    microsecond=0,
-                )
-                if candidate > when_utc:
-                    return candidate
-            probe = (probe + timedelta(days=1)).replace(
-                hour=0, minute=0, second=0, microsecond=0
-            )
-        raise RuntimeError(f"No market close found within a week for {self.symbol}")
+    if start <= end:
+        return start <= t < end
+    return t >= start or t < end
 
 
-# ---------------------------------------------------------------------
-# Defaults
-# ---------------------------------------------------------------------
-# Standard forex-style sessions (UTC).
-DEFAULT_SESSIONS: List[TradingSession] = [
-    TradingSession(SessionName.ASIAN, time(0, 0), time(9, 0)),
-    TradingSession(SessionName.LONDON, time(8, 0), time(17, 0)),
-    TradingSession(SessionName.NEW_YORK, time(13, 0), time(22, 0)),
-]
+# =============================================================================
+# DATA STRUCTURES
+# =============================================================================
+@dataclass
+class TimeWindow:
+    key: str
+    name: str
+    name_ar: str
+    start: time
+    end: time
+    priority: str = "medium"
+    styles: list[str] = field(default_factory=list)
 
-# Per-asset market hours.
-# Forex = 24/5 (Sun 22:00 UTC -> Fri 22:00 UTC).
-# Commodities have a daily maintenance/break window.
-DEFAULT_MARKET_HOURS: Dict[str, MarketHours] = {
-    "EUR/USD": MarketHours(
-        symbol="EUR/USD",
-        weekdays=(0, 1, 2, 3, 4, 6),  # Sun evening open
-        open_utc=time(22, 0),
-        close_utc=time(22, 0),
-        cross_midnight=True,
-    ),
-    "GBP/USD": MarketHours(
-        symbol="GBP/USD",
-        weekdays=(0, 1, 2, 3, 4, 6),
-        open_utc=time(22, 0),
-        close_utc=time(22, 0),
-        cross_midnight=True,
-    ),
-    "USD/JPY": MarketHours(
-        symbol="USD/JPY",
-        weekdays=(0, 1, 2, 3, 4, 6),
-        open_utc=time(22, 0),
-        close_utc=time(22, 0),
-        cross_midnight=True,
-    ),
-    # XAU/USD ~ 23/5 with a 1-hour daily break (roughly 22:00-23:00 UTC).
-    "XAU/USD": MarketHours(
-        symbol="XAU/USD",
-        weekdays=(0, 1, 2, 3, 4),
-        open_utc=time(23, 0),
-        close_utc=time(22, 0),
-        cross_midnight=True,
-    ),
-    "XAG/USD": MarketHours(
-        symbol="XAG/USD",
-        weekdays=(0, 1, 2, 3, 4),
-        open_utc=time(23, 0),
-        close_utc=time(22, 0),
-        cross_midnight=True,
-    ),
-    # WTI crude (CME) ~ 23:00-22:00 UTC with daily break; conservative default.
-    "WTI/USD": MarketHours(
-        symbol="WTI/USD",
-        weekdays=(0, 1, 2, 3, 4, 6),
-        open_utc=time(23, 0),
-        close_utc=time(22, 0),
-        cross_midnight=True,
-    ),
-}
+    def contains(self, dt: datetime) -> bool:
+        """`dt` MUST already be aware-UTC (callers go through _to_utc)."""
+        return _in_window(dt.time(), self.start, self.end)
 
+    def duration_minutes(self) -> int:
+        s = self.start.hour * 60 + self.start.minute
+        e = self.end.hour   * 60 + self.end.minute
+        if e <= s:
+            e += 1440
+        return e - s
 
-# ---------------------------------------------------------------------
-# SessionManager
-# ---------------------------------------------------------------------
-class SessionManager:
-    """
-    Coordinates session/market-hour tracking and triggers automatic
-    shutdown callbacks when the market is closed.
-    """
-
-    def __init__(
-        self,
-        sessions: Optional[Iterable[TradingSession]] = None,
-        market_hours: Optional[Dict[str, MarketHours]] = None,
-        symbols: Optional[Iterable[str]] = None,
-        shutdown_callbacks: Optional[List[Callable[[str], None]]] = None,
-    ) -> None:
-        self.sessions: List[TradingSession] = list(sessions or DEFAULT_SESSIONS)
-        hours_map = market_hours or DEFAULT_MARKET_HOURS
-        if symbols is not None:
-            self.market_hours: Dict[str, MarketHours] = {
-                s: hours_map[s] for s in symbols if s in hours_map
-            }
-        else:
-            self.market_hours = dict(hours_map)
-
-        self._shutdown_callbacks: List[Callable[[str], None]] = list(
-            shutdown_callbacks or []
-        )
-        self._shutdown_fired: bool = False
-
-    # -- session helpers -------------------------------------------------
-    def active_sessions(self, when_utc: Optional[datetime] = None) -> List[SessionName]:
-        when_utc = self._now(when_utc)
-        return [s.name for s in self.sessions if s.contains(when_utc)]
-
-    def session_for(self, name: SessionName) -> Optional[TradingSession]:
-        for s in self.sessions:
-            if s.name == name:
-                return s
-        return None
-
-    def convert_session_time(
-        self,
-        session: TradingSession,
-        when_utc: datetime,
-        tz: str,
-    ) -> datetime:
-        return when_utc.astimezone(ZoneInfo(tz))
-
-    # -- market-hour helpers --------------------------------------------
-    def is_market_open(
-        self,
-        symbol: str,
-        when_utc: Optional[datetime] = None,
-    ) -> bool:
-        when_utc = self._now(when_utc)
-        hours = self.market_hours.get(symbol)
-        if hours is None:
-            logger.warning("No market hours registered for %s", symbol)
-            return False
-        return hours.is_open(when_utc)
-
-    def any_market_open(self, when_utc: Optional[datetime] = None) -> bool:
-        when_utc = self._now(when_utc)
-        return any(h.is_open(when_utc) for h in self.market_hours.values())
-
-    def next_event_utc(
-        self,
-        symbol: str,
-        when_utc: Optional[datetime] = None,
-    ) -> Dict[str, datetime]:
-        """Return next open/close for a symbol."""
-        when_utc = self._now(when_utc)
-        hours = self.market_hours[symbol]
+    def to_dict(self) -> dict:
         return {
-            "next_open": hours.next_open_utc(when_utc),
-            "next_close": hours.next_close_utc(when_utc),
+            "key":      self.key,
+            "name":     self.name,
+            "name_ar":  self.name_ar,
+            "start":    self.start.strftime("%H:%M"),
+            "end":      self.end.strftime("%H:%M"),
+            "priority": self.priority,
+            "styles":   list(self.styles),
         }
 
-    # -- shutdown handling ---------------------------------------------
-    def register_shutdown_callback(self, cb: Callable[[str], None]) -> None:
-        self._shutdown_callbacks.append(cb)
 
-    def check_market_and_shutdown(
-        self,
-        when_utc: Optional[datetime] = None,
-    ) -> bool:
-        """
-        If no market is open, invoke shutdown callbacks once and return True.
-        Idempotent until reset() is called.
-        """
-        when_utc = self._now(when_utc)
-        if self.any_market_open(when_utc):
-            return False
+@dataclass
+class TradingPermission:
+    allowed: bool
+    code: str
+    reason: str
+    details: dict = field(default_factory=dict)
 
-        if self._shutdown_fired:
+    def __bool__(self) -> bool:
+        return self.allowed
+
+
+# =============================================================================
+# SESSION MANAGER
+# =============================================================================
+class SessionManager:
+    """Central gatekeeper for trading windows, kill zones and closures."""
+
+    def __init__(self, cfg=config):
+        self.cfg = cfg
+
+        self._sessions: dict[str, TimeWindow] = {
+            k: TimeWindow(
+                key=k,
+                name=v["name"],
+                name_ar=v["name_ar"],
+                start=_parse_hhmm(v["start"]),
+                end=_parse_hhmm(v["end"]),
+            )
+            for k, v in cfg.SESSIONS.items()
+            if v.get("active", True)
+        }
+
+        self._kill_zones: dict[str, TimeWindow] = {
+            k: TimeWindow(
+                key=k,
+                name=v["name"],
+                name_ar=v["name_ar"],
+                start=_parse_hhmm(v["start"]),
+                end=_parse_hhmm(v["end"]),
+                priority=v.get("priority", "medium"),
+                styles=list(v.get("styles", [])),
+            )
+            for k, v in cfg.KILL_ZONES.items()
+        }
+
+        self._dead_zones: dict[str, TimeWindow] = {
+            k: TimeWindow(
+                key=k,
+                name=v["name"],
+                name_ar=v["name_ar"],
+                start=_parse_hhmm(v["start"]),
+                end=_parse_hhmm(v["end"]),
+            )
+            for k, v in cfg.DEAD_LIQUIDITY_ZONES.items()
+        }
+
+        self._transitions: dict[str, TimeWindow] = {
+            k: TimeWindow(
+                key=k,
+                name=v["name"],
+                name_ar=v["name_ar"],
+                start=_parse_hhmm(v["start"]),
+                end=_parse_hhmm(v["end"]),
+            )
+            for k, v in cfg.MARKET_TRANSITIONS.items()
+        }
+
+    # -------------------------------------------------------------------------
+    # CLOCK
+    # -------------------------------------------------------------------------
+    def now(self) -> datetime:
+        return datetime.now(timezone.utc)
+
+    # -------------------------------------------------------------------------
+    # WEEKEND / CLOSURES
+    # -------------------------------------------------------------------------
+    def is_weekend(self, dt: Optional[datetime] = None) -> bool:
+        """Forex weekend = Fri ≥ close_hour → Sun < open_hour (UTC)."""
+        dt = _to_utc(dt)
+        wd = dt.weekday()  # Mon=0 ... Sun=6
+
+        if wd == 5:  # Saturday
             return True
+        if wd == 4 and dt.hour >= self.cfg.FOREX_CLOSE_FRIDAY_HOUR:
+            return True
+        if wd == 6 and dt.hour < self.cfg.FOREX_OPEN_SUNDAY_HOUR:
+            return True
+        return False
 
-        self._shutdown_fired = True
-        reason = f"All markets closed at {when_utc.isoformat()}"
-        logger.warning("Automatic shutdown triggered: %s", reason)
-        for cb in self._shutdown_callbacks:
-            try:
-                cb(reason)
-            except Exception:
-                logger.exception("Shutdown callback raised")
-        return True
+    def is_market_open(self, dt: Optional[datetime] = None) -> bool:
+        return not self.is_weekend(dt)
 
-    def reset(self) -> None:
-        """Reset the shutdown latch (e.g., at the start of a new session)."""
-        self._shutdown_fired = False
+    # -------------------------------------------------------------------------
+    # SESSIONS
+    # -------------------------------------------------------------------------
+    def get_active_sessions(self, dt: Optional[datetime] = None) -> list[TimeWindow]:
+        dt = _to_utc(dt)
+        return [s for s in self._sessions.values() if s.contains(dt)]
 
-    # -- internals -------------------------------------------------------
-    @staticmethod
-    def _now(when_utc: Optional[datetime]) -> datetime:
-        if when_utc is None:
-            return datetime.now(timezone.utc)
-        if when_utc.tzinfo is None:
-            return when_utc.replace(tzinfo=timezone.utc)
-        return when_utc.astimezone(timezone.utc)
+    def get_current_session(self, dt: Optional[datetime] = None) -> Optional[TimeWindow]:
+        active = self.get_active_sessions(dt)
+        return active[0] if active else None
+
+    # -------------------------------------------------------------------------
+    # KILL ZONES
+    # -------------------------------------------------------------------------
+    def get_active_kill_zones(
+        self,
+        dt: Optional[datetime] = None,
+        style: Optional[str] = None,
+    ) -> list[TimeWindow]:
+        dt = _to_utc(dt)
+        out: list[TimeWindow] = []
+        for kz in self._kill_zones.values():
+            if not kz.contains(dt):
+                continue
+            if style and kz.styles and style not in kz.styles:
+                continue
+            out.append(kz)
+        return out
+
+    def get_high_priority_kill_zones(
+        self, dt: Optional[datetime] = None
+    ) -> list[TimeWindow]:
+        return [kz for kz in self.get_active_kill_zones(dt) if kz.priority == "high"]
+
+    # -------------------------------------------------------------------------
+    # DEAD LIQUIDITY
+    # -------------------------------------------------------------------------
+    def get_dead_zone(self, dt: Optional[datetime] = None) -> Optional[TimeWindow]:
+        dt = _to_utc(dt)
+        for z in self._dead_zones.values():
+            if z.contains(dt):
+                return z
+        return None
+
+    def is_dead_liquidity(self, dt: Optional[datetime] = None) -> bool:
+        return self.get_dead_zone(dt) is not None
+
+    # -------------------------------------------------------------------------
+    # MARKET TRANSITIONS
+    # -------------------------------------------------------------------------
+    def get_transition(self, dt: Optional[datetime] = None) -> Optional[TimeWindow]:
+        dt = _to_utc(dt)
+        for t in self._transitions.values():
+            if t.contains(dt):
+                return t
+        return None
+
+    def is_market_transition(self, dt: Optional[datetime] = None) -> bool:
+        return self.get_transition(dt) is not None
+
+    # -------------------------------------------------------------------------
+    # MAIN GATE
+    # -------------------------------------------------------------------------
+    def can_trade(
+        self,
+        style: str = "Swing",
+        symbol: str = "EUR/USD",
+        dt: Optional[datetime] = None,
+    ) -> TradingPermission:
+        """
+        Single source of truth for whether a new trade may be opened.
+
+        Order of hard blocks:
+          1. invalid style
+          2. weekend
+          3. instrument-specific Friday early-close
+          4. dead liquidity zone
+          5. market transition window
+          6. no live session
+          7. style-specific kill-zone requirement (Scalping only)
+        """
+        dt = _to_utc(dt)
+
+        # 1) Style validation
+        if style not in self.cfg.TRADING_STYLES:
+            return TradingPermission(
+                False, "invalid_style", f"Unknown trading style: {style}"
+            )
+
+        # 2) Weekend
+        if self.is_weekend(dt):
+            return TradingPermission(
+                False, "weekend", "Forex market is closed for the weekend",
+                {"dt": dt.isoformat()},
+            )
+
+        # 3) Friday early close for specific symbols
+        if dt.weekday() == 4:  # Friday
+            close_hour = self.cfg.EARLY_CLOSE_INSTRUMENTS.get(symbol)
+            if close_hour is not None and dt.hour >= close_hour:
+                return TradingPermission(
+                    False, "early_close",
+                    f"{symbol} closed early for the weekend",
+                    {"close_hour_utc": close_hour},
+                )
+
+        # 4) Dead liquidity
+        dz = self.get_dead_zone(dt)
+        if dz is not None:
+            return TradingPermission(
+                False, "dead_liquidity",
+                f"Dead liquidity zone active: {dz.name}",
+                {"zone": dz.to_dict()},
+            )
+
+        # 5) Market transition
+        tr = self.get_transition(dt)
+        if tr is not None:
+            return TradingPermission(
+                False, "market_transition",
+                f"Market transition window: {tr.name}",
+                {"transition": tr.to_dict()},
+            )
+
+        # 6) Must have at least one live session
+        active_sessions = self.get_active_sessions(dt)
+        if not active_sessions:
+            return TradingPermission(
+                False, "no_session",
+                "No live trading session at this time",
+            )
+
+        # 7) Style-specific gating
+        if style == "Scalping":
+            kzs = self.get_active_kill_zones(dt, style="Scalping")
+            if not kzs:
+                return TradingPermission(
+                    False, "no_scalping_kill_zone",
+                    "Scalping requires an active kill zone",
+                    {"sessions": [s.to_dict() for s in active_sessions]},
+                )
+            high = [kz for kz in kzs if kz.priority == "high"]
+            if not high:
+                return TradingPermission(
+                    False, "no_high_priority_kill_zone",
+                    "Scalping requires a high-priority kill zone",
+                    {"kill_zones": [k.to_dict() for k in kzs]},
+                )
+            return TradingPermission(
+                True, "ok",
+                "Scalping allowed inside a high-priority kill zone",
+                {
+                    "sessions":   [s.to_dict() for s in active_sessions],
+                    "kill_zones": [k.to_dict() for k in high],
+                },
+            )
+
+        # Swing — allowed during any live session, extra context if in KZ
+        swing_kzs = self.get_active_kill_zones(dt, style="Swing")
+        return TradingPermission(
+            True, "ok",
+            "Swing trading allowed",
+            {
+                "sessions":     [s.to_dict() for s in active_sessions],
+                "kill_zones":   [k.to_dict() for k in swing_kzs],
+                "in_kill_zone": bool(swing_kzs),
+            },
+        )
+
+    # -------------------------------------------------------------------------
+    # NEXT-WINDOW QUERIES
+    # -------------------------------------------------------------------------
+    def _minutes_until(self, dt: datetime, target: time) -> int:
+        now_minutes = dt.hour * 60 + dt.minute
+        tgt_minutes = target.hour * 60 + target.minute
+        delta = tgt_minutes - now_minutes
+        if delta <= 0:
+            delta += 1440
+        return delta
+
+    def get_next_window(
+        self,
+        windows: dict[str, TimeWindow],
+        dt: Optional[datetime] = None,
+    ) -> Optional[tuple[TimeWindow, int]]:
+        """Return (window, minutes_until_start) for the soonest future window."""
+        dt = _to_utc(dt)
+        best: Optional[tuple[TimeWindow, int]] = None
+        for w in windows.values():
+            delta = self._minutes_until(dt, w.start)
+            if best is None or delta < best[1]:
+                best = (w, delta)
+        return best
+
+    def get_next_session(self, dt: Optional[datetime] = None):
+        return self.get_next_window(self._sessions, dt)
+
+    def get_next_kill_zone(self, dt: Optional[datetime] = None):
+        return self.get_next_window(self._kill_zones, dt)
+
+    # -------------------------------------------------------------------------
+    # SNAPSHOT (for the web dashboard)
+    # -------------------------------------------------------------------------
+    def snapshot(self, dt: Optional[datetime] = None) -> dict:
+        dt = _to_utc(dt)
+        active_sessions = self.get_active_sessions(dt)
+        kzs             = self.get_active_kill_zones(dt)
+        dz              = self.get_dead_zone(dt)
+        tr              = self.get_transition(dt)
+        next_sess       = self.get_next_session(dt)
+        next_kz         = self.get_next_kill_zone(dt)
+
+        swing_perm = self.can_trade("Swing", dt=dt)
+        scalp_perm = self.can_trade("Scalping", dt=dt)
+
+        return {
+            "now_utc":             dt.isoformat(),
+            "is_weekend":          self.is_weekend(dt),
+            "is_market_open":      self.is_market_open(dt),
+            "active_sessions":     [s.to_dict() for s in active_sessions],
+            "active_kill_zones":   [k.to_dict() for k in kzs],
+            "dead_liquidity_zone": dz.to_dict() if dz else None,
+            "market_transition":   tr.to_dict() if tr else None,
+            "next_session": (
+                {"session": next_sess[0].to_dict(), "in_minutes": next_sess[1]}
+                if next_sess else None
+            ),
+            "next_kill_zone": (
+                {"zone": next_kz[0].to_dict(), "in_minutes": next_kz[1]}
+                if next_kz else None
+            ),
+            "can_trade_swing":    swing_perm.allowed,
+            "swing_reason":       swing_perm.reason,
+            "swing_code":         swing_perm.code,
+            "can_trade_scalping": scalp_perm.allowed,
+            "scalping_reason":    scalp_perm.reason,
+            "scalping_code":      scalp_perm.code,
+        }
+
+
+# =============================================================================
+# MODULE-LEVEL SINGLETON + CONVENIENCE FUNCTIONS
+# =============================================================================
+_manager: Optional[SessionManager] = None
+
+
+def get_session_manager() -> SessionManager:
+    global _manager
+    if _manager is None:
+        _manager = SessionManager()
+    return _manager
+
+
+def can_trade(
+    style: str = "Swing",
+    symbol: str = "EUR/USD",
+    dt: Optional[datetime] = None,
+) -> TradingPermission:
+    return get_session_manager().can_trade(style=style, symbol=symbol, dt=dt)
+
+
+def snapshot(dt: Optional[datetime] = None) -> dict:
+    return get_session_manager().snapshot(dt)
+
+
+# =============================================================================
+# SELF-TEST
+# =============================================================================
+if __name__ == "__main__":
+    import json
+
+    sm  = get_session_manager()
+    now = sm.now()
+
+    print("=" * 68)
+    print(f"  SessionManager self-test  @  {now.isoformat()}")
+    print("=" * 68)
+    print(json.dumps(sm.snapshot(), indent=2, ensure_ascii=False))
+
+    print("\n--- Scenario checks (fixed timestamps) ---")
+    scenarios = [
+        ("Friday 21:30 UTC (closed)",    datetime(2026, 10, 30, 21, 30, tzinfo=timezone.utc)),
+        ("Saturday 12:00 UTC (closed)",  datetime(2026, 10, 31, 12, 0,  tzinfo=timezone.utc)),
+        ("Sunday 20:00 UTC (closed)",    datetime(2026, 11, 1, 20, 0,   tzinfo=timezone.utc)),
+        ("Sunday 21:30 UTC (opening)",   datetime(2026, 11, 1, 21, 30,  tzinfo=timezone.utc)),
+        ("Mon 08:00 UTC (London KZ)",    datetime(2026, 11, 2, 8, 0,    tzinfo=timezone.utc)),
+        ("Mon 10:30 UTC (London lunch)", datetime(2026, 11, 2, 10, 30,  tzinfo=timezone.utc)),
+        ("Mon 13:00 UTC (NY AM KZ)",     datetime(2026, 11, 2, 13, 0,   tzinfo=timezone.utc)),
+        ("Mon 21:05 UTC (rollover)",     datetime(2026, 11, 2, 21, 5,   tzinfo=timezone.utc)),
+    ]
+
+    for label, dt in scenarios:
+        sw = sm.can_trade("Swing",    "EUR/USD", dt=dt)
+        sc = sm.can_trade("Scalping", "EUR/USD", dt=dt)
+        print(f"{label:<32}  Swing={str(sw.allowed):<5} ({sw.code:<26})  "
+              f"Scalp={str(sc.allowed):<5} ({sc.code})")
