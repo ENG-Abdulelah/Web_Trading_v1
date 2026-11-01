@@ -786,10 +786,16 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
 
 
+# Start scheduler when gunicorn imports the app (production)
+# Delayed by 8s so gunicorn can boot cleanly first
+def _delayed_start_scheduler():
+    import time as _t
+    _t.sleep(8)
+    try:
+        start_scheduler()
+        logger.info("Scheduler auto-started on import (delayed)")
+    except Exception as e:
+        logger.error("Failed to start scheduler on import: %s", e)
 
-     # Start scheduler when gunicorn imports the app (production)
-try:
-    start_scheduler()
-    logger.info("Scheduler auto-started on import")
-except Exception as e:
-    logger.error("Failed to start scheduler on import: %s", e)
+threading.Thread(target=_delayed_start_scheduler, daemon=True).start()
+     
