@@ -7,6 +7,7 @@ Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإ
 """
 from __future__ import annotations
 
+import os
 import json
 import logging
 import sqlite3
@@ -14,10 +15,10 @@ import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path("data/trading.db")
+DB_PATH = Path(os.environ.get("DB_PATH", "data/trading.db"))
+#DB_PATH = Path("data/trading.db")
 
 
 def utcnow() -> datetime:
