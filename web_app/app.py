@@ -1,438 +1,270 @@
-# web_app/app.py
 """
-web_app/app.py
-
-FastAPI web server for the trading bot dashboard.
-
-Endpoints:
-    GET  /                 - dashboard (SSR + WS live updates)
-    GET  /lang/{lang}      - set language cookie & redirect back
-    GET  /api/state        - current state as JSON (polling fallback)
-    WS   /ws               - live state stream (1 update/sec)
-
-StateProvider is a thin adapter over the existing modules
-(core.sessions, execution.risk_manager, analysis.scorer). If any module
-is missing (e.g., running the dashboard standalone), it gracefully falls
-back to a realistic demo state so the UI still works.
+Web Trading App - Main Flask Application
+Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
 """
 
-from __future__ import annotations
-
-import asyncio
-import logging
-import math
-import os
+from flask import Flask, render_template
+from datetime import datetime
 import random
-import sys
-from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Set
 
-# ---- import path bootstrap ----------------------------------------------
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_PARENT = os.path.dirname(_HERE)
-for p in (_HERE, _PARENT):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+app = Flask(__name__)
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+# =============================================================================
+# BADGE HELPERS
+# =============================================================================
 
-from i18n import (  # type: ignore
-    DEFAULT_LANG,
-    SUPPORTED_LANGS,
-    get_lang,
-    get_translations,
-    is_rtl,
-)
-
-logger = logging.getLogger("web_app")
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
-)
+def tf_badge_class(tf):
+    return {
+        "1W": "bg-dark",
+        "1D": "bg-secondary",
+        "4H": "bg-primary",
+        "1H": "bg-info text-dark",
+        "5M": "bg-success",
+    }.get(tf, "bg-secondary")
 
 
-# =====================================================================
-# Optional module wiring (with graceful fallbacks)
-# =====================================================================
-def _try_import_sessions():
-    try:
-        from core.sessions import SessionManager  # type: ignore
-        return SessionManager
-    except Exception as exc:
-        logger.warning("SessionManager unavailable (%s); using demo sessions", exc)
-        return None
+def style_badge_class(style):
+    return {
+        "Swing":    "bg-primary",
+        "Scalping": "bg-warning text-dark",
+    }.get(style, "bg-secondary")
 
 
-def _try_import_risk():
-    try:
-        from execution.risk_manager import RiskManager  # type: ignore
-        return RiskManager
-    except Exception as exc:
-        logger.warning("RiskManager unavailable (%s); using demo capital", exc)
-        return None
+# Register template helpers
+app.jinja_env.filters["tf_badge"]     = tf_badge_class
+app.jinja_env.filters["style_badge"]  = style_badge_class
 
 
-SessionManager = _try_import_sessions()
-RiskManager = _try_import_risk()
+# =============================================================================
+# POSITION DATA  (replace these functions with your live broker/DB queries)
+# =============================================================================
+
+def get_live_positions():
+    """Active positions that are currently open in the market."""
+    return [
+        {"id": "L-1001", "symbol": "EUR/USD", "direction": "BUY",
+         "entry": 1.08720, "current": 1.09080, "sl": 1.08350, "tp": 1.09500,
+         "style": "Swing", "timeframe": "4H", "pnl": 36.00,
+         "opened": "2026-10-31 08:14", "strategy": "Silver Bullet"},
+        {"id": "L-1002", "symbol": "GBP/JPY", "direction": "SELL",
+         "entry": 189.420, "current": 189.115, "sl": 189.900, "tp": 188.200,
+         "style": "Swing", "timeframe": "1D", "pnl": 30.50,
+         "opened": "2026-10-30 14:02", "strategy": "Judas Swing"},
+        {"id": "L-1003", "symbol": "XAU/USD", "direction": "BUY",
+         "entry": 2032.10, "current": 2038.40, "sl": 2025.00, "tp": 2050.00,
+         "style": "Scalping", "timeframe": "5M", "pnl": 63.00,
+         "opened": "2026-11-01 09:35", "strategy": "FVG"},
+        {"id": "L-1004", "symbol": "USD/JPY", "direction": "SELL",
+         "entry": 151.240, "current": 151.090, "sl": 151.450, "tp": 150.500,
+         "style": "Scalping", "timeframe": "1H", "pnl": 15.00,
+         "opened": "2026-11-01 10:12", "strategy": "Kill Zones"},
+        {"id": "L-1005", "symbol": "BTC/USD", "direction": "BUY",
+         "entry": 68120.0, "current": 68540.0, "sl": 67600.0, "tp": 69500.0,
+         "style": "Swing", "timeframe": "1W", "pnl": 420.00,
+         "opened": "2026-10-28 00:00", "strategy": "Power of 3"},
+    ]
 
 
-# =====================================================================
-# Demo data (used when live data sources are not wired yet)
-# =====================================================================
-DEMO_ASSETS = [
-    {"symbol": "XAU/USD", "price": 2348.50, "prev": 2345.20, "open": True},
-    {"symbol": "XAG/USD", "price": 27.42,   "prev": 27.60,   "open": True},
-    {"symbol": "WTI/USD", "price": 78.15,   "prev": 77.90,   "open": True},
-    {"symbol": "EUR/USD", "price": 1.08500, "prev": 1.08420, "open": True},
-    {"symbol": "GBP/USD", "price": 1.27310, "prev": 1.27450, "open": True},
-    {"symbol": "USD/JPY", "price": 149.85,  "prev": 149.60,  "open": True},
-]
-
-# Sized to fit $50 × 1.5% = $0.75 risk budget at min lot 0.01.
-DEMO_POSITIONS = [
-    {
-        "id": "demo-001",
-        "symbol": "EUR/USD",
-        "side": "long",
-        "lots": 0.01,
-        "entry": 1.08500,
-        "stop_loss": 1.08430,
-        "take_profit": 1.08640,
-        "risk_usd": 0.70,
-        "reward_usd": 1.40,
-        "rr": 2.0,
-        "strategy": "fvg",
-        "pnl_r": 0.64,
-        "pnl_usd": 0.45,
-        "opened_at": datetime.now(timezone.utc) - timedelta(minutes=42),
-        "status": "open",
-    }
-]
-
-DEMO_SCORES = [
-    {"symbol": "EUR/USD", "direction": "long",  "technical": 6.8, "macro": 7.4, "geopolitical": 5.6},
-    {"symbol": "GBP/USD", "direction": "long",  "technical": 6.5, "macro": 6.6, "geopolitical": 5.0},
-    {"symbol": "USD/JPY", "direction": "short", "technical": 5.7, "macro": 6.3, "geopolitical": 6.8},
-    {"symbol": "XAU/USD", "direction": "long",  "technical": 5.9, "macro": 8.1, "geopolitical": 7.4},
-    {"symbol": "XAG/USD", "direction": "long",  "technical": 5.5, "macro": 7.0, "geopolitical": 7.1},
-    {"symbol": "WTI/USD", "direction": "long",  "technical": 6.2, "macro": 6.5, "geopolitical": 7.7},
-]
-SCORER_WEIGHTS = {"technical": 0.5, "macro": 0.3, "geopolitical": 0.2}
-MIN_SCORE = 5.5
-
-# Demo session windows (UTC).
-DEMO_SESSIONS = {
-    "asian":    {"open_h": 0, "close_h": 9},
-    "london":   {"open_h": 8, "close_h": 17},
-    "new_york": {"open_h": 13, "close_h": 22},
-}
+def get_pending_orders():
+    """Orders placed but not yet triggered."""
+    return [
+        {"id": "P-2001", "symbol": "AUD/USD", "direction": "BUY LIMIT",
+         "entry": 0.65200, "current": 0.65480, "sl": 0.64800, "tp": 0.66200,
+         "style": "Swing", "timeframe": "4H", "pnl": None,
+         "opened": "2026-11-01 06:00", "strategy": "OTE"},
+        {"id": "P-2002", "symbol": "USD/CAD", "direction": "SELL LIMIT",
+         "entry": 1.37450, "current": 1.37120, "sl": 1.37950, "tp": 1.36500,
+         "style": "Swing", "timeframe": "1D", "pnl": None,
+         "opened": "2026-10-31 20:30", "strategy": "Breaker Block"},
+        {"id": "P-2003", "symbol": "EUR/GBP", "direction": "BUY STOP",
+         "entry": 0.86350, "current": 0.86210, "sl": 0.85950, "tp": 0.87000,
+         "style": "Scalping", "timeframe": "5M", "pnl": None,
+         "opened": "2026-11-01 10:45", "strategy": "Turtle Soup"},
+        {"id": "P-2004", "symbol": "NAS100", "direction": "SELL LIMIT",
+         "entry": 15420.0, "current": 15380.0, "sl": 15550.0, "tp": 15100.0,
+         "style": "Scalping", "timeframe": "1H", "pnl": None,
+         "opened": "2026-11-01 11:05", "strategy": "London Open Reversal"},
+        {"id": "P-2005", "symbol": "XAG/USD", "direction": "BUY LIMIT",
+         "entry": 22.850, "current": 22.940, "sl": 22.500, "tp": 23.800,
+         "style": "Swing", "timeframe": "1W", "pnl": None,
+         "opened": "2026-10-29 04:00", "strategy": "Order Block"},
+    ]
 
 
-# =====================================================================
-# StateProvider
-# =====================================================================
-class StateProvider:
-    """
-    Builds the state dict consumed by the template + WebSocket.
-    """
+def get_closed_positions():
+    """Completed trades."""
+    return [
+        {"id": "C-3001", "symbol": "EUR/USD", "direction": "BUY",
+         "entry": 1.08200, "current": 1.08650, "sl": 1.07900, "tp": 1.08700,
+         "style": "Swing", "timeframe": "1H", "pnl": 45.00,
+         "opened": "2026-10-29 09:00", "closed": "2026-10-30 15:22",
+         "strategy": "Silver Bullet"},
+        {"id": "C-3002", "symbol": "GBP/USD", "direction": "SELL",
+         "entry": 1.21800, "current": 1.21450, "sl": 1.22100, "tp": 1.21400,
+         "style": "Scalping", "timeframe": "5M", "pnl": 35.00,
+         "opened": "2026-10-31 07:45", "closed": "2026-10-31 09:10",
+         "strategy": "SMT Divergence"},
+        {"id": "C-3003", "symbol": "XAU/USD", "direction": "BUY",
+         "entry": 2040.00, "current": 2036.20, "sl": 2035.00, "tp": 2055.00,
+         "style": "Swing", "timeframe": "4H", "pnl": -38.00,
+         "opened": "2026-10-30 16:00", "closed": "2026-10-31 03:12",
+         "strategy": "Order Block"},
+        {"id": "C-3004", "symbol": "USD/JPY", "direction": "BUY",
+         "entry": 150.900, "current": 151.420, "sl": 150.500, "tp": 151.500,
+         "style": "Scalping", "timeframe": "1H", "pnl": 52.00,
+         "opened": "2026-10-31 12:05", "closed": "2026-10-31 17:48",
+         "strategy": "Kill Zones"},
+        {"id": "C-3005", "symbol": "BTC/USD", "direction": "SELL",
+         "entry": 69200.0, "current": 68900.0, "sl": 69600.0, "tp": 68800.0,
+         "style": "Swing", "timeframe": "1D", "pnl": 300.00,
+         "opened": "2026-10-27 03:00", "closed": "2026-10-28 11:30",
+         "strategy": "Judas Swing"},
+    ]
 
-    def __init__(self) -> None:
-        self.session_mgr = SessionManager() if SessionManager else None
-        self.risk_mgr = RiskManager(automation_mode="single") if RiskManager else None
-        self.positions: List[dict] = [dict(p) for p in DEMO_POSITIONS]
-        self.assets: List[dict] = [dict(a) for a in DEMO_ASSETS]
-        self._rng = random.Random(7)
 
-    # -- sessions ------------------------------------------------------
-    def _session_block(self, now: datetime) -> List[dict]:
-        if self.session_mgr is not None:
-            out = []
-            for sess in self.session_mgr.sessions:
-                active = sess.contains(now)
-                if active:
-                    end = sess.next_close_utc(now)
-                    next_label = None
-                else:
-                    end = sess.next_open_utc(now)
-                    next_label = "next_open_in"
-                out.append({
-                    "id": sess.name.value,
-                    "label_key": f"session_{sess.name.value}",
-                    "active": active,
-                    "open": sess.open_utc.strftime("%H:%M"),
-                    "close": sess.close_utc.strftime("%H:%M"),
-                    "next_change_label_key": next_label or "closes_in",
-                    "next_change_secs": int((end - now).total_seconds()),
-                })
-            return out
+# =============================================================================
+# 20 ICT STRATEGY RANKINGS
+# =============================================================================
 
-        # Demo fallback
-        out = []
-        for sid, cfg in DEMO_SESSIONS.items():
-            open_t = now.replace(hour=cfg["open_h"], minute=0, second=0, microsecond=0)
-            close_t = now.replace(hour=cfg["close_h"], minute=0, second=0, microsecond=0)
-            active = open_t <= now < close_t
-            ref = close_t if active else open_t
-            if ref <= now:
-                ref += timedelta(days=1)
-            out.append({
-                "id": sid,
-                "label_key": f"session_{sid}",
-                "active": active,
-                "open": f"{cfg['open_h']:02d}:00",
-                "close": f"{cfg['close_h']:02d}:00",
-                "next_change_label_key": "closes_in" if active else "next_open_in",
-                "next_change_secs": int((ref - now).total_seconds()),
-            })
-        return out
+def get_strategy_rankings():
+    raw = [
+        {"name": "Silver Bullet",            "usage": 47, "success_rate": 68.5},
+        {"name": "Judas Swing",              "usage": 39, "success_rate": 72.1},
+        {"name": "Optimal Trade Entry (OTE)","usage": 33, "success_rate": 74.2},
+        {"name": "Order Block (OB)",         "usage": 52, "success_rate": 70.3},
+        {"name": "Fair Value Gap (FVG)",     "usage": 61, "success_rate": 66.9},
+        {"name": "Breaker Block",            "usage": 22, "success_rate": 71.4},
+        {"name": "Mitigation Block",         "usage": 18, "success_rate": 65.8},
+        {"name": "Liquidity Sweep",          "usage": 41, "success_rate": 73.6},
+        {"name": "Power of 3 (AMD)",         "usage": 29, "success_rate": 77.0},
+        {"name": "ICT 2022 Model",           "usage": 24, "success_rate": 75.5},
+        {"name": "Kill Zones",               "usage": 55, "success_rate": 69.8},
+        {"name": "Market Structure Shift",   "usage": 36, "success_rate": 67.2},
+        {"name": "Change of Character",      "usage": 31, "success_rate": 66.4},
+        {"name": "Smart Money Reversal",     "usage": 19, "success_rate": 72.9},
+        {"name": "Institutional Order Flow", "usage": 16, "success_rate": 78.3},
+        {"name": "SMT Divergence",           "usage": 27, "success_rate": 71.0},
+        {"name": "Turtle Soup",              "usage": 21, "success_rate": 64.7},
+        {"name": "Stop Hunt",                "usage": 34, "success_rate": 68.1},
+        {"name": "London Open Reversal",     "usage": 25, "success_rate": 70.6},
+        {"name": "New York Open Reversal",   "usage": 23, "success_rate": 69.4},
+    ]
+    ranked = sorted(raw, key=lambda s: s["success_rate"], reverse=True)
+    for i, s in enumerate(ranked, start=1):
+        s["rank"] = i
+    return ranked
 
-    def _market_open(self, sessions: List[dict], now: datetime) -> bool:
-        if self.session_mgr is not None:
-            try:
-                return self.session_mgr.any_market_open(now)
-            except Exception:
-                pass
-        # Fallback: weekend-closed heuristic for forex.
-        wd = now.weekday()  # Mon=0 .. Sun=6
-        if wd == 5:  # Saturday
-            return False
-        if wd == 6 and now.hour < 22:  # Sunday before 22:00
-            return False
-        return True
 
-    # -- assets --------------------------------------------------------
-    def _tick_assets(self) -> None:
-        """Simulate a small random walk so the UI feels alive."""
-        for a in self.assets:
-            drift = self._rng.gauss(0.0, 0.0006)
-            a["price"] = round(a["price"] * (1 + drift), 5)
-            chg = (a["price"] - a["prev"]) / a["prev"] * 100 if a["prev"] else 0.0
-            a["change_pct"] = round(chg, 3)
+# =============================================================================
+# NEWS FEEDS
+# =============================================================================
 
-    # -- scores --------------------------------------------------------
-    def _build_scores(self) -> List[dict]:
-        out = []
-        for s in DEMO_SCORES:
-            total = (
-                s["technical"] * SCORER_WEIGHTS["technical"]
-                + s["macro"] * SCORER_WEIGHTS["macro"]
-                + s["geopolitical"] * SCORER_WEIGHTS["geopolitical"]
-            )
-            out.append({
-                "symbol": s["symbol"],
-                "direction": s["direction"],
-                "technical": s["technical"],
-                "macro": s["macro"],
-                "geopolitical": s["geopolitical"],
-                "total": round(total, 2),
-                "approved": total >= MIN_SCORE,
-            })
-        return out
-
-    # -- aggregate -----------------------------------------------------
-    def build_state(self) -> Dict[str, Any]:
-        now = datetime.now(timezone.utc)
-        self._tick_assets()
-
-        sessions = self._session_block(now)
-        market_open = self._market_open(sessions, now)
-
-        capital = self.risk_mgr.capital if self.risk_mgr else 50.0
-        risk_pct = self.risk_mgr.risk_per_trade if self.risk_mgr else 0.015
-        max_conc = self.risk_mgr.max_concurrent if self.risk_mgr else 1
-        mode = self.risk_mgr.automation_mode if self.risk_mgr else "single"
-
-        positions_out = []
-        for p in self.positions:
-            pnl_r = p.get("pnl_r", 0.0)
-            pnl_usd = p.get("pnl_usd", 0.0)
-            positions_out.append({
-                "id": p["id"],
-                "symbol": p["symbol"],
-                "side": p["side"],
-                "lots": p["lots"],
-                "entry": p["entry"],
-                "stop_loss": p["stop_loss"],
-                "take_profit": p["take_profit"],
-                "risk_usd": p["risk_usd"],
-                "reward_usd": p["reward_usd"],
-                "rr": p["rr"],
-                "strategy": p["strategy"],
-                "pnl_r": round(pnl_r, 2),
-                "pnl_usd": round(pnl_usd, 2),
-                "opened_at": p["opened_at"].isoformat() if isinstance(p["opened_at"], datetime) else p["opened_at"],
-            })
-
-        return {
-            "timestamp": now.isoformat(),
-            "market_open": market_open,
-            "suspended": False,  # wired from TradingGuard in production
-            "capital": {
-                "balance": round(capital, 2),
-                "risk_pct": risk_pct,
-                "risk_usd": round(capital * risk_pct, 2),
-                "max_concurrent": max_conc,
-                "mode": mode,
-            },
-            "sessions": sessions,
-            "positions": positions_out,
-            "assets": [
-                {
-                    "symbol": a["symbol"],
-                    "price": a["price"],
-                    "change_pct": a.get("change_pct", 0.0),
-                    "open": a["open"],
-                }
-                for a in self.assets
+def get_news_feeds():
+    return {
+        "forexfactory": {
+            "title": "ForexFactory",
+            "title_ar": "فوركس فاكتوري",
+            "icon": "bi-globe2",
+            "color": "primary",
+            "items": [
+                {"time": "10:30", "impact": "high",   "event": "US Non-Farm Payrolls", "forecast": "180K", "previous": "150K"},
+                {"time": "12:00", "impact": "medium", "event": "GBP BoE Rate Decision", "forecast": "5.00%", "previous": "5.00%"},
+                {"time": "14:15", "impact": "high",   "event": "EUR ECB Press Conference", "forecast": "—", "previous": "—"},
             ],
-            "scores": self._build_scores(),
-            "min_score": MIN_SCORE,
-            "demo": self.session_mgr is None or self.risk_mgr is None,
-        }
-
-
-provider = StateProvider()
-
-
-# =====================================================================
-# WebSocket manager
-# =====================================================================
-class ConnectionManager:
-    def __init__(self) -> None:
-        self.active: Set[WebSocket] = set()
-
-    async def connect(self, ws: WebSocket) -> None:
-        await ws.accept()
-        self.active.add(ws)
-
-    def disconnect(self, ws: WebSocket) -> None:
-        self.active.discard(ws)
-
-    async def broadcast(self, message: dict) -> None:
-        dead: List[WebSocket] = []
-        for ws in list(self.active):
-            try:
-                await ws.send_json(message)
-            except Exception:
-                dead.append(ws)
-        for ws in dead:
-            self.active.discard(ws)
-
-
-manager = ConnectionManager()
-
-
-# =====================================================================
-# FastAPI app
-# =====================================================================
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    task = asyncio.create_task(_tick_loop())
-    try:
-        yield
-    finally:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-
-
-async def _tick_loop():
-    while True:
-        try:
-            state = provider.build_state()
-            await manager.broadcast(state)
-        except Exception:
-            logger.exception("tick_loop error")
-        await asyncio.sleep(1.0)
-
-
-app = FastAPI(title="Trading Bot Dashboard", lifespan=lifespan)
-
-templates = Jinja2Templates(directory=os.path.join(_HERE, "templates"))
-
-
-# ---------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------
-@app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
-    lang = get_lang(request)
-    state = provider.build_state()
-    return templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={
-            "lang": lang,
-            "dir": "rtl" if is_rtl(lang) else "ltr",
-            "T": get_translations(lang),
-            "lang_names": {"en": "EN", "ar": "AR"},
-            "state": state,
-            "initial_json": _safe_json(state),
         },
+        "investing": {
+            "title": "Investing.com",
+            "title_ar": "إنفستنغ",
+            "icon": "bi-graph-up-arrow",
+            "color": "success",
+            "items": [
+                {"time": "09:00", "impact": "low",    "event": "JPY Household Spending", "forecast": "0.6%",  "previous": "0.4%"},
+                {"time": "13:45", "impact": "medium", "event": "USD ISM Manufacturing",  "forecast": "48.5",  "previous": "47.9"},
+                {"time": "15:30", "impact": "high",   "event": "Crude Oil Inventories",  "forecast": "-1.2M", "previous": "-0.8M"},
+            ],
+        },
+        "fxdaily": {
+            "title": "FXDaily",
+            "title_ar": "فوركس ديلي",
+            "icon": "bi-currency-exchange",
+            "color": "info",
+            "items": [
+                {"time": "07:00", "impact": "medium", "event": "AUD Retail Sales MoM", "forecast": "0.3%", "previous": "0.2%"},
+                {"time": "11:00", "impact": "low",    "event": "CAD Building Permits", "forecast": "1.1%", "previous": "0.9%"},
+                {"time": "16:00", "impact": "high",   "event": "Fed Chair Speech",     "forecast": "—",    "previous": "—"},
+            ],
+        },
+        "cpi": {
+            "title": "CPI Inflation Data",
+            "title_ar": "بيانات التضخم CPI",
+            "icon": "bi-box-seam",
+            "color": "warning",
+            "items": [
+                {"time": "—", "impact": "high", "event": "US CPI YoY",   "forecast": "3.2%", "previous": "3.4%"},
+                {"time": "—", "impact": "high", "event": "EU CPI YoY",   "forecast": "2.6%", "previous": "2.9%"},
+                {"time": "—", "impact": "high", "event": "UK CPI YoY",   "forecast": "3.8%", "previous": "4.0%"},
+            ],
+        },
+        "cot": {
+            "title": "COT Report",
+            "title_ar": "تقرير COT",
+            "icon": "bi-clipboard-data",
+            "color": "danger",
+            "items": [
+                {"time": "Fri", "impact": "medium", "event": "EUR Net Long",  "forecast": "—", "previous": "+82.3K"},
+                {"time": "Fri", "impact": "medium", "event": "JPY Net Short", "forecast": "—", "previous": "-110.4K"},
+                {"time": "Fri", "impact": "medium", "event": "GBP Net Long",  "forecast": "—", "previous": "+28.6K"},
+            ],
+        },
+        "cftc": {
+            "title": "CFTC Positioning",
+            "title_ar": "بيانات CFTC",
+            "icon": "bi-bank",
+            "color": "secondary",
+            "items": [
+                {"time": "Fri", "impact": "medium", "event": "Speculative Net Long — Gold", "forecast": "—", "previous": "187.5K"},
+                {"time": "Fri", "impact": "medium", "event": "Speculative Net Long — S&P",  "forecast": "—", "previous": "42.1K"},
+                {"time": "Fri", "impact": "medium", "event": "Speculative Net Long — Oil",  "forecast": "—", "previous": "246.8K"},
+            ],
+        },
+    }
+
+
+# =============================================================================
+# ROUTES
+# =============================================================================
+
+@app.route("/")
+def index():
+    live        = get_live_positions()
+    pending     = get_pending_orders()
+    closed      = get_closed_positions()
+    strategies  = get_strategy_rankings()
+    news        = get_news_feeds()
+
+    total_pnl   = sum(p["pnl"] for p in live if p.get("pnl") is not None)
+    closed_pnl  = sum(p["pnl"] for p in closed if p.get("pnl") is not None)
+    wins        = sum(1 for p in closed if p.get("pnl", 0) > 0)
+    win_rate    = (wins / len(closed) * 100) if closed else 0
+
+    return render_template(
+        "index.html",
+        live_positions=live,
+        pending_orders=pending,
+        closed_positions=closed,
+        strategies=strategies,
+        news=news,
+        stats={
+            "live_count":     len(live),
+            "pending_count":  len(pending),
+            "closed_count":   len(closed),
+            "total_pnl":      round(total_pnl, 2),
+            "closed_pnl":     round(closed_pnl, 2),
+            "win_rate":       round(win_rate, 1),
+        },
+        now=datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
     )
-
-
-@app.get("/lang/{lang}")
-async def set_language(lang: str, request: Request):
-    if lang not in SUPPORTED_LANGS:
-        lang = DEFAULT_LANG
-    referer = request.headers.get("referer") or "/"
-    # Prevent open redirect: only allow relative referers.
-    if not referer.startswith("/"):
-        referer = "/"
-    response = RedirectResponse(url=referer, status_code=303)
-    response.set_cookie(
-        "lang", lang, max_age=60 * 60 * 24 * 365,
-        httponly=False, samesite="lax", path="/",
-    )
-    return response
-
-
-@app.get("/api/state")
-async def api_state():
-    return JSONResponse(provider.build_state())
-
-
-@app.get("/healthz")
-async def healthz():
-    return {"ok": True, "ts": datetime.now(timezone.utc).isoformat()}
-
-
-@app.websocket("/ws")
-async def ws_endpoint(ws: WebSocket):
-    await manager.connect(ws)
-    try:
-        await ws.send_json(provider.build_state())
-        while True:
-            # Client may send "ping"; ignore content, loop keeps conn alive.
-            await ws.receive_text()
-    except WebSocketDisconnect:
-        pass
-    except Exception:
-        logger.exception("ws_endpoint error")
-    finally:
-        manager.disconnect(ws)
-
-
-# ---------------------------------------------------------------------
-# Utilities
-# ---------------------------------------------------------------------
-def _safe_json(state: dict) -> str:
-    import json
-    return json.dumps(state, default=str).replace("</", "<\\/")
 
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "app:app",
-        host="0.0.0.0",
-        port=int(os.getenv("PORT", "8000")),
-        reload=False,
-        log_level="info",
-    )
+    app.run(host="0.0.0.0", port=5000, debug=True)
