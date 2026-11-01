@@ -760,6 +760,11 @@ def api_timemachine(signal_uid: str):
         "ok": True, "cached": False, "result": result.to_dict(),
     })
 
+     @app.route("/api/ping")
+def api_ping():
+    """Lightweight keep-alive endpoint for external cron."""
+    return jsonify({"ok": True, "t": utcnow().isoformat()})
+
 
 # =============================================================================
 # BOOT
@@ -780,10 +785,11 @@ if __name__ == "__main__":
     start_scheduler()
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
 
-# Start scheduler when gunicorn imports the app
+
+
+     # Start scheduler when gunicorn imports the app (production)
 try:
     start_scheduler()
-    logger.info("Scheduler auto-started on import (gunicorn/production mode)")
+    logger.info("Scheduler auto-started on import")
 except Exception as e:
     logger.error("Failed to start scheduler on import: %s", e)
-
