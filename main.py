@@ -1,909 +1,1005 @@
 # main.py
-"""
-main.py — master orchestrator for the automated trading bot.
-
-Wires together every module:
-    config                  → capital, assets, automation mode
-    core.sessions           → session tracking + shutdown callbacks
-    core.data_feed          → price/news feeds + trading guard
-    analysis.ict_engine     → adaptive SMC strategies
-    analysis.fundamentals   → macro / geopolitical bias
-    analysis.scorer         → alignment score & 5.5/10 gate
-    execution.risk_manager  → position sizing + concurrency
-    execution.entry_exit    → SL/TP planning + bar-by-bar simulation
-    execution.broker_connector → order submission + transparent tickets
-    web_app                 → live dashboard (optional)
-
-Run modes
----------
-    python main.py                         # demo paper-trading (synthetic prices)
-    python main.py --mode multi            # allow up to 3 concurrent trades
-    python main.py --with-web              # also start the dashboard on :8000
-    python main.py --sim                   # 10,000-run Monte Carlo then exit
-    python main.py --live --with-web       # requires a wired broker adapter
-
-Signals are generated on bar close, sized by RiskManager, scored by
-TradeScorer, and only executed when ScoredTrade.approved is True
-(total ≥ 5.5/10 by default). Positions are managed bar-by-bar; on SL/TP
-hit the trade closes through SimulatedBroker, updates the risk ledger,
-and feeds its R-multiple back into AdaptiveICTEngine for iterative
-strategy tuning.
-"""
+# =============================================================================
+#   Web Trading Platform — Main Entry Point (Ultimate Glue File)
+# -----------------------------------------------------------------------------
+#   Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
+# -----------------------------------------------------------------------------
+#   This file connects EVERY component of the platform:
+#       1. SQLite persistence  (database/persistence.py)
+#       2. Risk Manager        (execution/risk_manager.py)   → $50 @ 1.5%
+#       3. Entry/Exit Manager  (execution/entry_exit.py)     → BE / Trail / TP1
+#       4. Feedback Loop       (feedback/feedback_loop.py)   → self-learning
+#       5. Data Feed           (data/feed.py)
+#       6. 20 ICT Strategies   (strategy/ict_strategies.py)
+#       7. Scoring Matrix      (strategy/scoring.py)
+#       8. Broker Execution    (execution/broker.py)
+#       9. FastAPI + Uvicorn web server (real-time UI)
+# =============================================================================
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
-import os
-import random
 import signal
 import sys
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+import threading
+import time
+import urllib.request
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
-# -------------------------------------------------------------------------
-# Path bootstrap so `python main.py` works from any cwd
-# -------------------------------------------------------------------------
-ROOT = Path(__file__).resolve().parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+import yaml
 
-# -------------------------------------------------------------------------
-# Project imports
-# -------------------------------------------------------------------------
-from config import (  # noqa: E402
-    ASSETS,
-    ASSET_SYMBOLS,
-    AUTOMATION_MODES,
-    DEFAULT_CAPITAL,
-    RISK_PER_TRADE,
-    TIMEFRAMES,
-)
+# -----------------------------------------------------------------------------
+# CORE MODULES (already built in this project)
+# -----------------------------------------------------------------------------
+from database.persistence import PersistenceManager
+from execution.entry_exit import EntryExitManager, ExitReason
+from execution.risk_manager import RiskManager, RiskConfig
+from feedback.feedback_loop import FeedbackLoop, FeedbackConfig
 
-from core.sessions import SessionManager  # noqa: E402
-from core.data_feed import (  # noqa: E402
-    NewsEvent,
-    NewsImpact,
-    NewsStreamParser,
-    TradingGuard,
-)
-
-from analysis.ict_engine import (  # noqa: E402
-    AdaptiveICTEngine,
-    Candle,
-    Direction,
-    FVGStrategy,
-    LiquiditySweepStrategy,
-    OrderBlockStrategy,
-    atr,
-    detect_regime,
-)
-from analysis.fundamentals import (  # noqa: E402
-    FundamentalAnalyzer,
-    GeopoliticalEvent,
-    MacroSnapshot,
-    RiskAssessment,
-    RiskRegime,
-)
-from analysis.scorer import (  # noqa: E402
-    ScoredTrade,
-    TradeScorer,
-    ValidationError,
-)
-
-from execution.risk_manager import RiskManager, SymbolSpec  # noqa: E402
-from execution.entry_exit import ExitPlanner  # noqa: E402
-from execution.broker_connector import (  # noqa: E402
-    PlaceholderBroker,
-    SimulatedBroker,
-    ticket_from_plan,
-)
-from execution.timemachine import TimeMachine  # noqa: E402
+# -----------------------------------------------------------------------------
+# OPTIONAL MODULES (graceful fallbacks if not present in the repo)
+# -----------------------------------------------------------------------------
+try:
+    from data.feed import MarketDataFeed
+except ImportError:
+    MarketDataFeed = None  # type: ignore
 
 try:
-    from web_app import app as web_app_module  # noqa: E402
-    WEB_AVAILABLE = True
-except Exception:  # pragma: no cover
-    web_app_module = None
-    WEB_AVAILABLE = False
+    from execution.broker import BrokerClient
+except ImportError:
+    BrokerClient = None  # type: ignore
+
+try:
+    from execution.order_manager import OrderManager
+except ImportError:
+    OrderManager = None  # type: ignore
+
+try:
+    from strategy.ict_strategies import ICTStrategyEngine
+except ImportError:
+    ICTStrategyEngine = None  # type: ignore
+
+try:
+    from strategy.scoring import ScoringMatrix
+except ImportError:
+    ScoringMatrix = None  # type: ignore
+
+# -----------------------------------------------------------------------------
+# WEB (FastAPI / Uvicorn)
+# -----------------------------------------------------------------------------
+try:
+    import uvicorn
+    from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+    from fastapi.responses import HTMLResponse, JSONResponse
+    HAS_WEB = True
+except ImportError:
+    HAS_WEB = False
+    FastAPI = None  # type: ignore
+    uvicorn = None  # type: ignore
 
 
-# -------------------------------------------------------------------------
-# Logging
-# -------------------------------------------------------------------------
-def configure_logging(level: str = "INFO", log_file: Optional[str] = None) -> None:
-    handlers: List[logging.Handler] = [logging.StreamHandler(sys.stdout)]
-    if log_file:
-        Path(log_file).parent.mkdir(parents=True, exist_ok=True)
-        handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
+# =============================================================================
+#   CREDITS BANNER
+# =============================================================================
+BANNER = r"""
+╔══════════════════════════════════════════════════════════════════════════╗
+║                                                                          ║
+║   ██╗    ██╗███████╗██████╗     ████████╗██████╗  █████╗ ██████╗ ██╗███╗  ║
+║   ██║    ██║██╔════╝██╔══██╗    ╚══██╔══╝██╔══██╗██╔══██╗██╔══██╗██║████╗ ║
+║   ██║ █╗ ██║█████╗  ██████╔╝       ██║   ██████╔╝███████║██║  ██║██║██╔██╗║
+║   ██║███╗██║██╔══╝  ██╔══██╗       ██║   ██╔══██╗██╔══██║██║  ██║██║██║╚██║
+║   ╚███╔███╔╝███████╗██████╔╝       ██║   ██║  ██║██║  ██║██████╔╝██║██║ ╚█║
+║    ╚══╝╚══╝ ╚══════╝╚═════╝        ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ ╚═╝╚═╝  ║
+║                                                                          ║
+║           Automated Multi-Strategy Trading Platform  v1.0                ║
+║                                                                          ║
+║   Developed & Engineered by Engineer Abdulelah Sadiq                     ║
+║                            ( المهندس عبد الإله صادق )                    ║
+║                                                                          ║
+║   Modules  : SQLite • Risk • Entry/Exit • Feedback • ICT • Scoring       ║
+║   Web      : FastAPI + Uvicorn (real-time dashboard)                     ║
+╚══════════════════════════════════════════════════════════════════════════╝
+"""
+
+
+# =============================================================================
+#   LOGGING
+# =============================================================================
+def setup_logging(level: str = "INFO") -> None:
+    Path("logs").mkdir(parents=True, exist_ok=True)
+    log_file = f"logs/trading_{datetime.now(timezone.utc):%Y%m%d}.log"
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)-7s %(name)-22s :: %(message)s",
-        datefmt="%H:%M:%S",
-        handlers=handlers,
-        force=True,
+        format="%(asctime)s | %(levelname)-8s | %(name)-25s | %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler(log_file, encoding="utf-8"),
+        ],
     )
-    # Quiet down chatty third-party loggers
-    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
-    logging.getLogger("asyncio").setLevel(logging.WARNING)
 
 
 logger = logging.getLogger("main")
 
 
-# -------------------------------------------------------------------------
-# Seed prices / volatility for the demo feed
-# -------------------------------------------------------------------------
-SEED_PRICES: Dict[str, float] = {
-    "XAU/USD": 2348.50,
-    "XAG/USD": 27.42,
-    "WTI/USD": 78.15,
-    "EUR/USD": 1.08500,
-    "GBP/USD": 1.27310,
-    "USD/JPY": 149.85,
-}
-
-BASE_VOL: Dict[str, float] = {
-    "XAU/USD": 0.0016,
-    "XAG/USD": 0.0024,
-    "WTI/USD": 0.0030,
-    "EUR/USD": 0.0004,
-    "GBP/USD": 0.0005,
-    "USD/JPY": 0.0004,
-}
+# =============================================================================
+#   CONFIG LOADER
+# =============================================================================
+def load_config(path: str) -> dict:
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"Config not found: {path}")
+    with open(p, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+    logger.info("Config loaded from %s", path)
+    return cfg
 
 
-# -------------------------------------------------------------------------
-# TradingBot
-# -------------------------------------------------------------------------
-@dataclass
-class OpenTrade:
-    ticket_id: str
-    plan: Any                       # TradePlan
-    decision: Any                   # SizingDecision
-    position: Any                   # OpenPosition (from RiskManager)
-    scored: ScoredTrade
-    opened_at: datetime
-    bars_open: int = 0
+# =============================================================================
+#   FALLBACK IMPLEMENTATIONS
+#   (used only when the corresponding module is missing)
+# =============================================================================
+class PaperBroker:
+    """Minimal in-memory broker for paper-trading / dry-run."""
+
+    def __init__(self, cfg: dict):
+        self.cfg = cfg or {}
+        self.balance: float = float(self.cfg.get("initial_balance", 50.0))
+        self._tickets: Dict[str, dict] = {}
+        self._next_id = 1
+        logger.warning("PaperBroker aktif — لا يوجد اتصال بوسيط حقيقي (paper mode).")
+
+    def connect(self) -> None: logger.info("[PaperBroker] connected")
+    def disconnect(self) -> None: logger.info("[PaperBroker] disconnected")
+    def get_balance(self) -> float: return self.balance
+
+    def open_market_order(self, symbol, side, lot_size, sl=None, tp=None, **kw) -> dict:
+        ticket = f"PAPER-{self._next_id:06d}"
+        self._next_id += 1
+        price = float(kw.get("price", 0.0)) or 0.0
+        self._tickets[ticket] = dict(symbol=symbol, side=side, lot=lot_size,
+                                     sl=sl, tp=tp, entry=price)
+        logger.info("[PaperBroker] OPEN %s %s %s lot=%s", side, symbol, ticket, lot_size)
+        return {"ticket_id": ticket, "filled_price": price, "status": "filled"}
+
+    def place_pending_order(self, symbol, side, order_type, price, lot_size, sl=None, tp=None, **kw) -> str:
+        ticket = f"PEND-{self._next_id:06d}"
+        self._next_id += 1
+        self._tickets[ticket] = dict(symbol=symbol, side=side, type=order_type,
+                                     price=price, lot=lot_size, sl=sl, tp=tp)
+        logger.info("[PaperBroker] PENDING %s %s %s @%s", order_type, side, symbol, price)
+        return ticket
+
+    def close_position(self, ticket_id: str, price: float, reason: str = "") -> dict:
+        info = self._tickets.pop(ticket_id, None)
+        if info:
+            logger.info("[PaperBroker] CLOSE %s @%s (%s)", ticket_id, price, reason)
+        return {"ticket_id": ticket_id, "close_price": price, "status": "closed"}
+
+    def cancel_pending(self, order_id: str) -> None:
+        self._tickets.pop(order_id, None)
 
 
-class TradingBot:
-    """Master orchestrator. See module docstring for the wiring summary."""
+class SimulatedFeed:
+    """Minimal tick/candle feed for testing without external data source."""
 
-    def __init__(
-        self,
-        capital: float = DEFAULT_CAPITAL,
-        automation_mode: str = "single",
-        paper: bool = True,
-        demo: bool = True,
-        bar_seconds: int = 30,
-        tick_seconds: float = 1.0,
-        max_history: int = 500,
-        seed: Optional[int] = 42,
-        with_web: bool = False,
-        web_host: str = "0.0.0.0",
-        web_port: int = 8000,
-    ) -> None:
-        self.capital = float(capital)
-        self.automation_mode = automation_mode
-        self.paper = paper
-        self.demo = demo
-        self.bar_seconds = int(bar_seconds)
-        self.tick_seconds = float(tick_seconds)
-        self.max_history = int(max_history)
-        self.rng = random.Random(seed)
-        self.with_web = with_web
-        self.web_host = web_host
-        self.web_port = web_port
+    def __init__(self, cfg: dict, symbols: List[str]):
+        self.symbols = symbols or ["XAU/USD"]
+        self._base = {s: 2350.0 if "XAU" in s else (1.10 if "EUR/USD" in s else 65000.0)
+                      for s in self.symbols}
+        self._candles: Dict[str, dict] = {}
+        logger.warning("SimulatedFeed aktif — أسعار محاكاة عشوائية.")
 
-        self.symbols: List[str] = list(ASSET_SYMBOLS)
+    def connect(self) -> None: logger.info("[Feed] connected (simulated)")
+    def disconnect(self) -> None: pass
 
-        # ---- Core subsystems --------------------------------------------
-        self.session_mgr = SessionManager(
-            shutdown_callbacks=[self._on_market_shutdown],
-        )
-        self.risk = RiskManager(
-            capital=self.capital,
-            risk_per_trade=RISK_PER_TRADE,
-            automation_mode=automation_mode,
-            strict_min_lot=True,
-        )
+    def get_current_prices(self, symbols: List[str]) -> Dict[str, float]:
+        import random
+        return {s: round(self._base[s] * (1 + random.uniform(-0.001, 0.001)), 5)
+                for s in symbols if s in self._base}
 
-        # ---- Analysis ----------------------------------------------------
-        self.engine = AdaptiveICTEngine(
-            strategies=[
-                OrderBlockStrategy(),
-                FVGStrategy(),
-                LiquiditySweepStrategy(),
-            ],
-            min_samples=8,
-            min_win_rate=0.45,
-            auto_optimize=True,
-            optimize_every=4,
-        )
-        self.fundamentals = FundamentalAnalyzer()
-        self.scorer = TradeScorer(
-            technical_weight=0.5,
-            macro_weight=0.3,
-            geopolitical_weight=0.2,
-            min_score=TradeScorer.MIN_SCORE,
-            require_alignment=0,
-        )
+    def get_atr(self, symbols: List[str], period: int = 14) -> Dict[str, float]:
+        return {s: 1.2 if "XAU" in s else 0.001 for s in symbols if s in self._base}
 
-        # ---- Execution ---------------------------------------------------
-        self.exit_planner = ExitPlanner(
-            min_rr=1.5,
-            sl_atr_floor_mult=0.6,
-            structure_lookback=5,
-            partial_exits=True,
-            trailing=True,
-        )
-        self.broker = (
-            SimulatedBroker(starting_balance=self.capital)
-            if paper
-            else PlaceholderBroker()
-        )
-
-        # ---- News guard --------------------------------------------------
-        self.guard = TradingGuard(
-            symbols=self.symbols,
-            currencies=("USD", "EUR", "GBP", "JPY"),
-            pre_event_window=timedelta(minutes=5),
-            post_event_stabilization=timedelta(minutes=10),
-            suspension_callbacks=[self._on_news_suspend],
-            resume_callbacks=[self._on_news_resume],
-        )
-        self.news_parser: Optional[NewsStreamParser] = None
-
-        # ---- Runtime state ----------------------------------------------
-        self.history: Dict[str, List[Candle]] = {s: [] for s in self.symbols}
-        self.positions: Dict[str, OpenTrade] = {}
-        self._last_scores: Dict[str, ScoredTrade] = {}
-        self._stop = asyncio.Event()
-        self._started_at = datetime.now(timezone.utc)
-        self._bars_closed = 0
-        self._signals_evaluated = 0
-        self._signals_executed = 0
-
-    # ==================================================================
-    # Lifecycle
-    # ==================================================================
-    async def run(self) -> None:
-        self._install_signal_handlers()
-        await self._startup()
-        web_task: Optional[asyncio.Task] = None
-        try:
-            if self.with_web and WEB_AVAILABLE:
-                self._attach_web_state()
-                web_task = asyncio.create_task(self._run_web())
-            await self._main_loop()
-        finally:
-            if web_task is not None:
-                web_task.cancel()
-                try:
-                    await web_task
-                except asyncio.CancelledError:
-                    pass
-            await self._shutdown()
-
-    async def _startup(self) -> None:
-        logger.info("=" * 74)
-        logger.info("Trading bot starting")
-        logger.info(
-            "  mode            : %s (%s)",
-            self.automation_mode,
-            "paper" if self.paper else "live",
-        )
-        logger.info(
-            "  feed            : %s",
-            "synthetic (demo)" if self.demo else "live",
-        )
-        logger.info(
-            "  capital         : $%.2f  risk/trade: %.2f%% ($%.4f)",
-            self.capital,
-            RISK_PER_TRADE * 100,
-            self.capital * RISK_PER_TRADE,
-        )
-        logger.info(
-            "  max concurrent  : %d (%s)",
-            self.risk.max_concurrent,
-            AUTOMATION_MODES[self.automation_mode]["description"],
-        )
-        logger.info(
-            "  min align score : %.2f / 10",
-            self.scorer.min_score,
-        )
-        logger.info("  symbols         : %s", ", ".join(self.symbols))
-        logger.info("  web dashboard   : %s", "enabled" if self.with_web else "disabled")
-        logger.info("=" * 74)
-
-        # Seed history so strategies have enough structure on the first bar.
-        for sym in self.symbols:
-            self.history[sym] = self._seed_history(sym, n=200)
-
-        # Start news parser only in live mode (needs vendor wiring).
-        if not self.demo:
-            self._start_news_parser()
-
-    async def _shutdown(self) -> None:
-        logger.info("-" * 74)
-        logger.info("Trading bot shutting down")
-        # Close any open positions at last known price.
-        for tid, trade in list(self.positions.items()):
-            last = self.history[trade.plan.symbol][-1].close
-            self._close_trade(tid, exit_price=last, reason="shutdown")
-        runtime = (datetime.now(timezone.utc) - self._started_at).total_seconds()
-        logger.info(
-            "  runtime         : %.0fs (%d bars, %d signals, %d executed)",
-            runtime, self._bars_closed, self._signals_evaluated, self._signals_executed,
-        )
-        logger.info("  final capital   : $%.2f", self.risk.capital)
-        logger.info("  strategy perf   : %s", self.engine.performance_snapshot())
-        logger.info("-" * 74)
-
-    def _install_signal_handlers(self) -> None:
-        try:
-            loop = asyncio.get_running_loop()
-            for sig in (signal.SIGINT, signal.SIGTERM):
-                try:
-                    loop.add_signal_handler(sig, self._stop.set)
-                except NotImplementedError:  # Windows
-                    signal.signal(sig, lambda *_: self._stop.set())
-        except Exception:
-            logger.debug("Signal handler install failed", exc_info=True)
-
-    # ==================================================================
-    # Main loop
-    # ==================================================================
-    async def _main_loop(self) -> None:
-        last_bar_time: Dict[str, datetime] = {
-            s: datetime.now(timezone.utc) for s in self.symbols
+    def get_last_closed_candle(self, symbol: str) -> Optional[dict]:
+        if symbol not in self._base:
+            return None
+        import random
+        price = self._base[symbol]
+        now_min = int(time.time() // 60)
+        if self._candles.get(symbol, {}).get("time_min") == now_min:
+            return None  # already served
+        candle = {
+            "time": datetime.now(timezone.utc),
+            "open": price * (1 + random.uniform(-0.0005, 0.0005)),
+            "high": price * (1 + random.uniform(0, 0.001)),
+            "low":  price * (1 - random.uniform(0, 0.001)),
+            "close": price * (1 + random.uniform(-0.0005, 0.0005)),
+            "volume": random.randint(100, 1000),
         }
-        while not self._stop.is_set():
-            now = datetime.now(timezone.utc)
-            try:
-                self.session_mgr.check_market_and_shutdown(now)
+        self._candles[symbol] = {"time_min": now_min, **candle}
+        return candle
 
-                for sym in self.symbols:
-                    if (now - last_bar_time[sym]).total_seconds() >= self.bar_seconds:
-                        await self._on_bar_close(sym, now)
-                        last_bar_time[sym] = now
-            except Exception:
-                logger.exception("Error in main loop tick")
 
-            try:
-                await asyncio.wait_for(self._stop.wait(), timeout=self.tick_seconds)
-            except asyncio.TimeoutError:
-                pass
+# ---- 20 ICT strategies fallback ------------------------------------------------
+ICT_STRATEGY_NAMES = [
+    "order_blocks", "fair_value_gap", "liquidity_sweep", "break_of_structure",
+    "change_of_character", "market_structure_shift", "optimal_trade_entry",
+    "premium_discount", "killzone_london", "killzone_newyork", "judas_swing",
+    "power_of_three", "mitigation_block", "imbalance", "volume_imbalance",
+    "liquidity_void", "daily_open", "previous_day_hl", "asian_range",
+    "silver_bullet",
+]
 
-    # ==================================================================
-    # Bar close handling
-    # ==================================================================
-    async def _on_bar_close(self, symbol: str, now: datetime) -> None:
-        bar = self._gen_candle(symbol, now)
-        self._append_history(symbol, bar)
-        self._bars_closed += 1
 
-        # Manage any open position on this symbol first.
-        self._update_open_trades(symbol, bar)
+class FallbackICTEngine:
+    """Placeholder ICT engine registering all 20 strategies with simple heuristics."""
 
-        # Market-hours guard
-        if not self.session_mgr.is_market_open(symbol, now):
-            return
-        # News guard
-        if self.guard.is_suspended(now):
-            return
-        # Concurrency guard (redundant with risk manager, but cheap)
-        ok, why = self.risk.can_open_new_trade(symbol)
-        if not ok:
-            logger.debug("Skip %s: %s", symbol, why)
-            return
+    def __init__(self, cfg: dict):
+        self.cfg = cfg or {}
+        self.strategies = list(ICT_STRATEGY_NAMES)
+        logger.warning("FallbackICTEngine aktif — 20 ICT strategies (heuristics).")
 
-        # ---- Pipeline -----------------------------------------------
-        candles = self.history[symbol]
-        if len(candles) < 60:
-            return
+    def analyze(self, symbol: str, candle: dict, current_price: float) -> List[dict]:
+        import random
+        results: List[dict] = []
+        for name in self.strategies:
+            score = random.uniform(-1, 1)
+            side = "buy" if score > 0.3 else ("sell" if score < -0.3 else None)
+            results.append({
+                "strategy": name,
+                "symbol": symbol,
+                "score": round(score, 4),
+                "side": side,
+                "strength": abs(score),
+            })
+        return results
 
-        try:
-            signal = self.engine.select_best(candles, symbol)
-        except Exception:
-            logger.exception("Engine error on %s", symbol)
-            return
-        if signal is None or signal.direction == Direction.NEUTRAL:
-            return
-        self._signals_evaluated += 1
 
-        spec = self.risk.specs.get(symbol)
-        if spec is None:
-            return
+class FallbackScoring:
+    """Weighted-average scoring matrix fallback."""
 
-        plan = self.exit_planner.plan(signal, candles, spec)
-        if not plan.valid:
-            logger.debug("Invalid plan %s: %s", symbol, plan.validation_reason)
-            return
+    def __init__(self, cfg: dict):
+        self.cfg = cfg or {}
+        self.min_strength = float(self.cfg.get("min_signal_strength", 0.55))
 
-        decision = self.risk.size(
-            symbol=plan.symbol,
-            direction=plan.direction.value,
-            entry=plan.entry,
-            stop_loss=plan.stop_loss,
-            take_profit=plan.take_profit,
+    def combine(self, analyses: List[dict], weights: Optional[Dict[str, float]] = None) -> dict:
+        weights = weights or {}
+        total_w = 0.0
+        net = 0.0
+        buy_score = 0.0
+        sell_score = 0.0
+        for a in analyses:
+            w = float(weights.get(a["strategy"], 1.0))
+            net += a["score"] * w
+            total_w += w
+            if a["score"] > 0:
+                buy_score += a["score"] * w
+            else:
+                sell_score += -a["score"] * w
+        if total_w == 0:
+            return {"side": None, "strength": 0.0}
+        normalized = net / total_w
+        strength = abs(normalized)
+        side = "buy" if normalized > 0 else ("sell" if normalized < 0 else None)
+        if strength < self.min_strength:
+            return {"side": None, "strength": strength, "buy_score": buy_score,
+                    "sell_score": sell_score}
+        return {"side": side, "strength": strength,
+                "buy_score": round(buy_score, 3), "sell_score": round(sell_score, 3)}
+
+
+# =============================================================================
+#   NEWS PROVIDER (ForexFactory + CPI filter, cache-backed)
+# =============================================================================
+class NewsProvider:
+    """Fetches economic calendar events (ForexFactory JSON, cached 5 min)."""
+
+    FF_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+
+    def __init__(self, cfg: dict):
+        self.cfg = cfg or {}
+        self.cache_ttl = float(self.cfg.get("cache_ttl", 300))
+        self._cache: List[dict] = []
+        self._last_fetch: float = 0.0
+        self._lock = threading.Lock()
+
+    def get_events(self, impact: Optional[str] = None,
+                   keyword: Optional[str] = None) -> List[dict]:
+        with self._lock:
+            now = time.time()
+            if now - self._last_fetch > self.cache_ttl:
+                try:
+                    req = urllib.request.Request(self.FF_URL, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req, timeout=8) as r:
+                        data = json.loads(r.read().decode("utf-8"))
+                    self._cache = data if isinstance(data, list) else []
+                    self._last_fetch = now
+                except Exception as e:
+                    logger.warning("news fetch failed: %s", e)
+            events = list(self._cache)
+
+        if impact:
+            events = [e for e in events if str(e.get("impact", "")).lower() == impact.lower()]
+        if keyword:
+            k = keyword.lower()
+            events = [e for e in events
+                      if k in str(e.get("title", "")).lower()
+                      or k in str(e.get("country", "")).lower()]
+        return events
+
+    def cpi_events(self) -> List[dict]:
+        return self.get_events(keyword="CPI")
+
+    def high_impact(self) -> List[dict]:
+        return self.get_events(impact="High")
+
+
+# =============================================================================
+#   TRADING APPLICATION (core orchestrator, thread-safe)
+# =============================================================================
+class TradingApplication:
+    """The live trading bot. Runs in a background thread."""
+
+    def __init__(self, config: dict):
+        self.config = config
+        self.symbols: List[str] = config.get("symbols", ["XAU/USD"])
+        self.loop_interval: float = float(config.get("loop_interval_sec", 5.0))
+        self.default_lot: float = float(config.get("default_lot", 0.001))
+        self.db_path: str = config.get("db_path", "data/trading.db")
+
+        # ---- 1) Persistence ----
+        self.persistence = PersistenceManager(db_path=self.db_path)
+
+        # ---- 2) Feedback Loop (attached to persistence file) ----
+        self.feedback = FeedbackLoop(
+            self.persistence,
+            FeedbackConfig(**(config.get("feedback", {}) or {})),
         )
-        if not decision.approved:
-            logger.debug("Rejected size %s: %s", symbol, decision.reason)
-            return
 
-        # ---- Score the trade ---------------------------------------
-        bias = self.fundamentals.symbol_bias(
-            symbol, self._macro_snapshot(), self._recent_news(), self._recent_geo(),
+        # ---- 3) Risk Manager ----
+        self.risk_manager = RiskManager.from_config(
+            self.persistence, config.get("risk_management", {}) or {}
         )
-        risk_assessment = self.fundamentals.geopolitical_risk(self._recent_geo())
-        scored = self.scorer.score(signal, bias, risk_assessment)
-        self._last_scores[symbol] = scored
 
-        try:
-            self.scorer.validate_or_raise(scored)
-        except ValidationError as exc:
-            logger.info("Trade rejected by scorer on %s: %s", symbol, exc)
-            return
-
-        # ---- Execute ------------------------------------------------
-        request = ticket_from_plan(plan, decision, score=scored.total)
-        try:
-            ticket = self.broker.submit(request, spec, decision)
-        except NotImplementedError:
-            logger.error("Broker not wired for live execution; aborting trade.")
-            return
-
-        position = self.risk.reserve(
-            decision,
-            entry=plan.entry,
-            stop_loss=plan.stop_loss,
-            take_profit=plan.take_profit,
-            strategy_id=plan.strategy_id,
+        # ---- 4) Entry/Exit Manager ----
+        self.exit_manager = EntryExitManager(
+            persistence=self.persistence,
+            feedback=self.feedback,   # optional kwarg if entry_exit supports it
+            breakeven_at_r=float(config.get("breakeven_at_r", 1.0)),
+            trailing_start_r=float(config.get("trailing_start_r", 1.5)),
+            trailing_distance_pips=float(config.get("trailing_distance_pips", 10.0)),
+            partial_tp1_ratio=float(config.get("partial_tp1_ratio", 0.5)),
+            pip_value_per_lot=config.get("pip_value_per_lot", {}) or {},
+        ) if "feedback" in EntryExitManager.__init__.__code__.co_varnames else EntryExitManager(
+            persistence=self.persistence,
+            breakeven_at_r=float(config.get("breakeven_at_r", 1.0)),
+            trailing_start_r=float(config.get("trailing_start_r", 1.5)),
+            trailing_distance_pips=float(config.get("trailing_distance_pips", 10.0)),
+            partial_tp1_ratio=float(config.get("partial_tp1_ratio", 0.5)),
+            pip_value_per_lot=config.get("pip_value_per_lot", {}) or {},
         )
-        self.positions[ticket.ticket_id] = OpenTrade(
-            ticket_id=ticket.ticket_id,
-            plan=plan,
-            decision=decision,
-            position=position,
-            scored=scored,
-            opened_at=now,
-        )
-        self._signals_executed += 1
 
-        logger.info(
-            "OPEN %-8s %-5s %.2f lots @ %.5f  SL=%.5f  TP=%.5f  "
-            "R:R 1:%.2f  score=%.2f",
-            ticket.symbol, ticket.side, ticket.lots, ticket.filled_entry,
-            plan.stop_loss, plan.take_profit, plan.rr, scored.total,
-        )
-        logger.info("\n%s", ticket.render())
-
-    # ==================================================================
-    # Position management
-    # ==================================================================
-    def _update_open_trades(self, symbol: str, bar: Candle) -> None:
-        for tid, trade in list(self.positions.items()):
-            plan = trade.plan
-            if plan.symbol != symbol:
-                continue
-            is_long = plan.direction.value == "long"
-
-            # Stop-loss checked first (conservative assumption)
-            if is_long and bar.low <= plan.stop_loss:
-                self._close_trade(tid, plan.stop_loss, "stop")
-                continue
-            if not is_long and bar.high >= plan.stop_loss:
-                self._close_trade(tid, plan.stop_loss, "stop")
-                continue
-
-            # Take-profit
-            if is_long and bar.high >= plan.take_profit:
-                self._close_trade(tid, plan.take_profit, "take_profit")
-                continue
-            if not is_long and bar.low <= plan.take_profit:
-                self._close_trade(tid, plan.take_profit, "take_profit")
-                continue
-
-            # Timeout (bar-count, ~4 hours at 1m bars in prod; demo scales)
-            trade.bars_open += 1
-            if trade.bars_open >= 200:
-                self._close_trade(tid, bar.close, "timeout")
-
-    def _close_trade(self, ticket_id: str, exit_price: float, reason: str) -> None:
-        trade = self.positions.pop(ticket_id, None)
-        if trade is None:
-            return
-        plan = trade.plan
-        risk_dist = abs(plan.entry - plan.stop_loss)
-        is_long = plan.direction.value == "long"
-        if risk_dist <= 0:
-            r = 0.0
-        elif is_long:
-            r = (exit_price - plan.entry) / risk_dist
+        # ---- 5) Broker ----
+        broker_cfg = config.get("broker", {}) or {}
+        if BrokerClient is not None:
+            self.broker = BrokerClient(broker_cfg)
         else:
-            r = (plan.entry - exit_price) / risk_dist
+            self.broker = PaperBroker(broker_cfg)
 
+        # ---- 6) Data feed ----
+        feed_cfg = config.get("data_feed", {}) or {}
+        if MarketDataFeed is not None:
+            self.feed = MarketDataFeed(feed_cfg, self.symbols)
+        else:
+            self.feed = SimulatedFeed(feed_cfg, self.symbols)
+
+        # ---- 7) Order manager (pending orders) ----
+        if OrderManager is not None:
+            self.order_manager = OrderManager(
+                persistence=self.persistence, broker=self.broker
+            )
+        else:
+            self.order_manager = None
+
+        # ---- 8) 20 ICT strategies + scoring matrix ----
+        strat_cfg = config.get("strategy", {}) or {}
+        self.ict_engine = (ICTStrategyEngine(strat_cfg)
+                           if ICTStrategyEngine is not None
+                           else FallbackICTEngine(strat_cfg))
+        self.scoring = (ScoringMatrix(strat_cfg.get("scoring", {}))
+                        if ScoringMatrix is not None
+                        else FallbackScoring(strat_cfg))
+
+        # ---- 9) News ----
+        self.news = NewsProvider(config.get("news", {}) or {})
+
+        # ---- State shared with web UI ----
+        self._lock = threading.RLock()
+        self._shutdown = threading.Event()
+        self._started_at = datetime.now(timezone.utc)
+        self._last_cycle_at: Optional[datetime] = None
+        self._last_cycle_duration: float = 0.0
+        self._cycle_count: int = 0
+        self._last_signals: Dict[str, dict] = {}
+        self._strategy_rankings: List[dict] = []
+        self._errors: List[str] = []
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+    def request_shutdown(self) -> None:
+        logger.warning("Shutdown requested.")
+        self._shutdown.set()
+
+    def _safe_call(self, label: str, fn, *args, **kwargs):
         try:
-            self.broker.close(ticket_id, exit_price, r)
-        except Exception:
-            logger.exception("Broker close failed for %s", ticket_id)
+            return fn(*args, **kwargs)
+        except Exception as e:
+            msg = f"{label}: {type(e).__name__}: {e}"
+            logger.exception(msg)
+            with self._lock:
+                self._errors.append(msg)
+                self._errors = self._errors[-50:]
+            return None
 
-        self.risk.release(trade.position.position_id, r)
+    def _connect(self) -> None:
+        logger.info("Connecting broker & feed ...")
+        self._safe_call("broker.connect", self.broker.connect)
+        self._safe_call("feed.connect", self.feed.connect)
+        logger.info("Connections established.")
+
+    def _disconnect(self) -> None:
+        logger.info("Disconnecting ...")
+        self._safe_call("feed.disconnect", self.feed.disconnect)
+        self._safe_call("broker.disconnect", self.broker.disconnect)
         try:
-            self.engine.record_outcome(plan.strategy_id, r)
+            self.persistence.close()
         except Exception:
-            logger.exception("record_outcome failed")
-
-        logger.info(
-            "CLOSE %-8s %-5s @ %.5f  %+.2fR  reason=%s  capital=$%.2f",
-            plan.symbol, plan.direction.value, exit_price, r, reason,
-            self.risk.capital,
-        )
-
-    # ==================================================================
-    # Callbacks
-    # ==================================================================
-    def _on_market_shutdown(self, reason: str) -> None:
-        logger.warning("Market shutdown triggered: %s", reason)
-        for tid, trade in list(self.positions.items()):
-            try:
-                last = self.history[trade.plan.symbol][-1].close
-            except Exception:
-                last = trade.plan.entry
-            self._close_trade(tid, last, "market_shutdown")
-
-    def _on_news_suspend(self, event: NewsEvent) -> None:
-        logger.warning("News suspension: %s (impact=%s)",
-                       event.title, getattr(event.impact, "value", event.impact))
-
-    def _on_news_resume(self) -> None:
-        logger.info("News suspension lifted; trading resumed")
-
-    # ==================================================================
-    # Demo data generation
-    # ==================================================================
-    def _seed_history(self, symbol: str, n: int = 200) -> List[Candle]:
-        price = SEED_PRICES.get(symbol, 100.0)
-        vol = BASE_VOL.get(symbol, 0.001)
-        start = datetime.now(timezone.utc) - timedelta(minutes=n)
-        candles: List[Candle] = []
-        for i in range(n):
-            o = price
-            drift = self.rng.gauss(0.0, vol)
-            c = o * (1.0 + drift)
-            hi = max(o, c) * (1.0 + abs(self.rng.gauss(0.0, vol * 0.6)))
-            lo = min(o, c) * (1.0 - abs(self.rng.gauss(0.0, vol * 0.6)))
-            candles.append(Candle(
-                symbol=symbol,
-                open_time=start + timedelta(minutes=i),
-                open=o, high=hi, low=lo, close=c,
-                volume=self.rng.uniform(100, 1000),
-            ))
-            price = c
-        return candles
-
-    def _gen_candle(self, symbol: str, now: datetime) -> Candle:
-        last = self.history[symbol][-1] if self.history[symbol] else None
-        vol = BASE_VOL.get(symbol, 0.001)
-        o = last.close if last else SEED_PRICES.get(symbol, 100.0)
-        drift = self.rng.gauss(0.0, vol)
-        c = o * (1.0 + drift)
-        hi = max(o, c) * (1.0 + abs(self.rng.gauss(0.0, vol * 0.6)))
-        lo = min(o, c) * (1.0 - abs(self.rng.gauss(0.0, vol * 0.6)))
-        return Candle(
-            symbol=symbol,
-            open_time=now,
-            open=o, high=hi, low=lo, close=c,
-            volume=self.rng.uniform(100, 1000),
-        )
-
-    def _append_history(self, symbol: str, candle: Candle) -> None:
-        h = self.history[symbol]
-        h.append(candle)
-        if len(h) > self.max_history:
-            del h[: len(h) - self.max_history]
-
-    # ==================================================================
-    # News parser (live mode only)
-    # ==================================================================
-    def _start_news_parser(self) -> None:
-        self.news_parser = NewsStreamParser()
-        asyncio.create_task(self._news_loop())
-        logger.info("News stream parser started")
-
-    async def _news_loop(self) -> None:
-        assert self.news_parser is not None
+            pass
         try:
-            await self.news_parser.start()
-            async for event in self.news_parser.stream():
-                await self.guard.handle_event(event)
-        except NotImplementedError:
-            logger.info("News parser not wired; running without news guard")
-        except asyncio.CancelledError:
-            raise
+            self.feedback.close()
         except Exception:
-            logger.exception("News loop error")
+            pass
+        logger.info("Disconnected.")
 
-    # ==================================================================
-    # Fundamental inputs (static demo values)
-    # ==================================================================
-    @staticmethod
-    def _macro_snapshot() -> MacroSnapshot:
-        return MacroSnapshot(
-            interest_rates={"USD": 5.25, "EUR": 4.00, "GBP": 5.25, "JPY": -0.10},
-            inflation_yoy={"USD": 3.2, "EUR": 2.4, "GBP": 3.4, "JPY": 2.8},
-            gdp_growth={"USD": 2.4, "EUR": 0.6, "GBP": 0.3, "JPY": 0.9},
-            unemployment={"USD": 3.9, "EUR": 6.5, "GBP": 4.2, "JPY": 2.6},
-        )
+    # ------------------------------------------------------------------
+    # Main loop (runs in worker thread)
+    # ------------------------------------------------------------------
+    def run(self) -> None:
+        self._connect()
+        logger.info("Trading loop started. Symbols=%s, interval=%.1fs",
+                    self.symbols, self.loop_interval)
+        try:
+            while not self._shutdown.is_set():
+                cycle_start = time.time()
+                try:
+                    self._run_cycle()
+                except Exception as e:
+                    logger.exception("Cycle error: %s", e)
+                    with self._lock:
+                        self._errors.append(f"cycle: {type(e).__name__}: {e}")
+                        self._errors = self._errors[-50:]
+                finally:
+                    with self._lock:
+                        self._cycle_count += 1
+                        self._last_cycle_at = datetime.now(timezone.utc)
+                        self._last_cycle_duration = time.time() - cycle_start
 
-    @staticmethod
-    def _recent_news() -> List[NewsEvent]:
-        now = datetime.now(timezone.utc)
-        return [
-            NewsEvent(
-                id="demo-cpi",
-                title="US CPI in line with expectations",
-                source="demo",
-                published_at=now - timedelta(hours=1),
-                impact=NewsImpact.MEDIUM,
-                currencies=("USD",),
-                tags=("cpi",),
-            ),
-        ]
+                # Sleep with early-exit on shutdown
+                slept = 0.0
+                while slept < self.loop_interval and not self._shutdown.is_set():
+                    time.sleep(0.2)
+                    slept += 0.2
+        finally:
+            self._graceful_shutdown()
 
-    @staticmethod
-    def _recent_geo() -> List[GeopoliticalEvent]:
-        now = datetime.now(timezone.utc)
-        return [
-            GeopoliticalEvent(
-                severity=0.35,
-                region="Middle East",
-                tag="energy",
-                description="Regional supply tension (demo)",
-                published_at=now - timedelta(hours=2),
-            ),
-        ]
+    def _graceful_shutdown(self) -> None:
+        logger.warning("Graceful shutdown: closing all open positions ...")
+        try:
+            prices = self.feed.get_current_prices(self.symbols) or {}
+            self.exit_manager.close_all_positions(prices)
+        except Exception as e:
+            logger.error("close_all_positions failed: %s", e)
+        try:
+            for pos in self.exit_manager.open_positions.values():
+                self.persistence.save_open_position(pos)
+        except Exception as e:
+            logger.error("persist state failed: %s", e)
+        self._disconnect()
+        logger.info("Shutdown complete.")
 
-    # ==================================================================
-    # Web dashboard integration
-    # ==================================================================
-    def _attach_web_state(self) -> None:
-        if not WEB_AVAILABLE or web_app_module is None:
-            logger.warning("Web app not available; skipping dashboard wiring")
+    # ------------------------------------------------------------------
+    # One cycle
+    # ------------------------------------------------------------------
+    def _run_cycle(self) -> None:
+        # 1) current prices + ATR
+        prices = self.feed.get_current_prices(self.symbols) or {}
+        if not prices:
             return
-        try:
-            bot = self
-            def build() -> Dict[str, Any]:
-                return bot.build_web_state()
-            web_app_module.provider.build_state = build  # type: ignore[assignment]
-            logger.info("Live state wired into web dashboard")
-        except Exception:
-            logger.exception("Failed to wire web state")
+        atrs = self._safe_call("feed.atr", self.feed.get_atr, self.symbols) or {}
 
-    def build_web_state(self) -> Dict[str, Any]:
-        now = datetime.now(timezone.utc)
-        sessions: List[Dict[str, Any]] = []
-        for sess in self.session_mgr.sessions:
-            active = sess.contains(now)
-            ref = sess.next_close_utc(now) if active else sess.next_open_utc(now)
-            sessions.append({
-                "id": sess.name.value,
-                "label_key": f"session_{sess.name.value}",
-                "active": active,
-                "open": sess.open_utc.strftime("%H:%M"),
-                "close": sess.close_utc.strftime("%H:%M"),
-                "next_change_label_key": "closes_in" if active else "next_open_in",
-                "next_change_secs": int((ref - now).total_seconds()),
-            })
+        # 2) Manage open positions (BE / trail / TP1 / SL / TP)
+        closed_actions = self.exit_manager.update_open_positions(
+            current_prices=prices, atr_values=atrs
+        )
+        for ticket_id, reason, exit_price in closed_actions:
+            self._safe_call(
+                f"broker.close_position({ticket_id})",
+                self.broker.close_position, ticket_id, exit_price, reason.value,
+            )
 
-        positions: List[Dict[str, Any]] = []
-        for trade in self.positions.values():
-            plan = trade.plan
-            last_close = self.history[plan.symbol][-1].close
-            risk = abs(plan.entry - plan.stop_loss) or 1e-9
-            is_long = plan.direction.value == "long"
-            pnl_r = ((last_close - plan.entry) if is_long else (plan.entry - last_close)) / risk
-            positions.append({
-                "id": trade.ticket_id,
-                "symbol": plan.symbol,
-                "side": plan.direction.value,
-                "lots": trade.decision.lots,
-                "entry": plan.entry,
-                "stop_loss": plan.stop_loss,
-                "take_profit": plan.take_profit,
-                "risk_usd": trade.decision.risk_usd,
-                "reward_usd": trade.decision.reward_usd,
-                "rr": plan.rr,
-                "strategy": plan.strategy_id,
-                "pnl_r": round(pnl_r, 2),
-                "pnl_usd": round(pnl_r * trade.decision.risk_usd, 2),
-                "opened_at": trade.opened_at.isoformat(),
-            })
+        # 3) Process pending orders (if OrderManager exists)
+        if self.order_manager is not None:
+            filled = self._safe_call(
+                "order_manager.process_pending_orders",
+                self.order_manager.process_pending_orders, prices,
+            ) or []
+            for order in filled:
+                self.exit_manager.register_new_position(
+                    ticket_id=order["ticket_id"], symbol=order["symbol"],
+                    side=order["side"], entry_price=order["filled_price"],
+                    sl=order["sl"], tp=order["tp"], lot_size=order["lot_size"],
+                    strategy_name=order.get("strategy_name", "ict"),
+                    risk_reward=order.get("risk_reward", 0.0),
+                )
 
-        assets: List[Dict[str, Any]] = []
-        for sym in self.symbols:
-            h = self.history[sym]
-            if not h:
+        # 4) Analyze candles with 20 ICT strategies
+        for symbol in self.symbols:
+            candle = self._safe_call(
+                f"feed.candle({symbol})", self.feed.get_last_closed_candle, symbol
+            )
+            if not candle:
                 continue
-            last = h[-1]
-            prev = h[-2] if len(h) > 1 else last
-            chg = (last.close - prev.open) / prev.open * 100 if prev.open else 0.0
-            assets.append({
-                "symbol": sym,
-                "price": round(last.close, 5),
-                "change_pct": round(chg, 3),
-                "open": self.session_mgr.is_market_open(sym, now),
-            })
+            analyses = self._safe_call(
+                f"ict.analyze({symbol})", self.ict_engine.analyze,
+                symbol, candle, prices[symbol],
+            ) or []
+            weights = self.feedback.get_all_weights() if self.feedback else {}
+            combined = self.scoring.combine(analyses, weights) if analyses else {}
+            with self._lock:
+                self._last_signals[symbol] = {
+                    "price": prices.get(symbol),
+                    "combined": combined,
+                    "top_strategies": sorted(
+                        analyses, key=lambda x: x["strength"], reverse=True
+                    )[:5],
+                    "at": datetime.now(timezone.utc).isoformat(),
+                }
 
-        scores: List[Dict[str, Any]] = []
-        for sym, scored in self._last_scores.items():
-            scores.append({
-                "symbol": sym,
-                "direction": scored.direction.value,
-                "technical": scored.technical,
-                "macro": scored.macro,
-                "geopolitical": scored.geopolitical,
-                "total": scored.total,
-                "approved": scored.approved,
-            })
+            # 5) If a strong signal → risk check → execute
+            side = combined.get("side") if combined else None
+            strength = float(combined.get("strength", 0.0)) if combined else 0.0
+            if side and strength >= float(self.config.get("min_signal_strength", 0.55)):
+                self._try_execute(symbol, side, prices[symbol], candle)
 
+        # 6) Refresh strategy rankings
+        self._refresh_rankings()
+
+    def _try_execute(self, symbol: str, side: str, price: float, candle: dict) -> None:
+        # Compute SL/TP from candle + ATR
+        atr = (self.feed.get_atr([symbol]) or {}).get(symbol, 0.0)
+        sl_dist = atr * 1.5 if atr else max(price * 0.002, 0.001)
+        tp_dist = sl_dist * 2.0  # 1:2 R:R
+
+        sl = price - sl_dist if side == "buy" else price + sl_dist
+        tp = price + tp_dist if side == "buy" else price - tp_dist
+
+        balance = self._safe_call("broker.get_balance", self.broker.get_balance) or 0.0
+
+        validation = self.risk_manager.validate_new_trade(
+            symbol=symbol, side=side, entry_price=price,
+            stop_loss=sl, take_profit=tp, balance=balance,
+            open_positions=list(self.exit_manager.open_positions.values()),
+        )
+        if not validation.approved:
+            logger.info("[RISK BLOCK] %s %s | %s", symbol, side, validation.reason)
+            return
+
+        lot = validation.lot_sizing.lot_size
+        result = self._safe_call(
+            "broker.open_market_order", self.broker.open_market_order,
+            symbol=symbol, side=side, lot_size=lot, sl=sl, tp=tp, price=price,
+        )
+        if not result:
+            return
+
+        self.exit_manager.register_new_position(
+            ticket_id=result["ticket_id"], symbol=symbol, side=side,
+            entry_price=result.get("filled_price", price), sl=sl, tp=tp,
+            lot_size=lot, strategy_name="ict_scored",
+            risk_reward=abs(tp - price) / max(abs(price - sl), 1e-9),
+        )
+        # Store context on position for feedback loop
+        pos = self.exit_manager.open_positions.get(result["ticket_id"])
+        if pos:
+            pos.metadata["filters_active"] = {
+                s["strategy"]: s["score"]
+                for s in (self._last_signals.get(symbol, {}).get("top_strategies") or [])
+            }
+            pos.metadata["signal_strength"] = (
+                self._last_signals.get(symbol, {}).get("combined", {}).get("strength", 0.0)
+            )
+            self.persistence.save_open_position(pos)
+        logger.info("[OPEN] %s %s lot=%s ticket=%s", side.upper(), symbol, lot,
+                    result["ticket_id"])
+
+    def _refresh_rankings(self) -> None:
+        try:
+            weights = self.feedback.get_detailed_weights() if self.feedback else []
+        except Exception:
+            weights = []
+        rankings = sorted(
+            [{
+                "strategy": w.filter_name,
+                "weight": round(w.weight, 3),
+                "win_rate": round(w.win_rate * 100, 2),
+                "avg_r": round(w.avg_r, 3),
+                "trades": w.total_trades,
+                "sample_ready": w.sample_ready,
+            } for w in weights],
+            key=lambda x: (x["weight"], x["avg_r"]),
+            reverse=True,
+        )
+        with self._lock:
+            self._strategy_rankings = rankings
+
+    # ------------------------------------------------------------------
+    # Read-only snapshots for the web API
+    # ------------------------------------------------------------------
+    def snapshot_stats(self) -> dict:
+        balance = self._safe_call("broker.get_balance", self.broker.get_balance) or 0.0
+        open_pos = list(self.exit_manager.open_positions.values())
+        try:
+            daily_ok, daily_pnl, daily_pct = self.risk_manager.check_daily_loss(balance)
+            port_ok, port_pct = self.risk_manager.check_portfolio_risk(open_pos, balance)
+        except Exception:
+            daily_pnl, daily_pct = 0.0, 0.0
+            port_pct = 0.0
+        with self._lock:
+            return {
+                "developer": "Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)",
+                "started_at": self._started_at.isoformat(),
+                "uptime_sec": (datetime.now(timezone.utc) - self._started_at).total_seconds(),
+                "balance": round(balance, 2),
+                "open_positions": len(open_pos),
+                "pending_orders": len(self.persistence.get_pending_orders())
+                                  if hasattr(self.persistence, "get_pending_orders") else 0,
+                "daily_pnl_usd": round(daily_pnl, 4),
+                "daily_pnl_pct": round(daily_pct * 100, 3),
+                "portfolio_risk_pct": round(port_pct * 100, 3),
+                "cycles": self._cycle_count,
+                "last_cycle_at": self._last_cycle_at.isoformat()
+                                 if self._last_cycle_at else None,
+                "last_cycle_duration_sec": round(self._last_cycle_duration, 3),
+                "shutdown_requested": self._shutdown.is_set(),
+                "errors_tail": self._errors[-5:],
+            }
+
+    def snapshot_open(self) -> List[dict]:
+        out = []
+        for p in self.exit_manager.open_positions.values():
+            out.append({
+                "ticket_id": p.ticket_id, "symbol": p.symbol, "side": p.side,
+                "entry": p.entry_price, "current_sl": p.current_sl,
+                "current_tp": p.current_tp, "lot": p.lot_size,
+                "breakeven_done": p.breakeven_done,
+                "trailing_active": p.trailing_active,
+                "partial_tp1_done": p.partial_tp1_done,
+                "open_time": p.open_time.isoformat() if p.open_time else None,
+            })
+        return out
+
+    def snapshot_pending(self) -> List[dict]:
+        try:
+            rows = self.persistence.get_pending_orders() if hasattr(
+                self.persistence, "get_pending_orders") else []
+        except Exception:
+            rows = []
+        return [dict(r) for r in rows]
+
+    def snapshot_closed(self, limit: int = 100) -> List[dict]:
+        try:
+            rows = self.persistence.get_closed_trades(limit=limit)
+        except Exception:
+            rows = []
+        return [dict(r) for r in rows]
+
+    def snapshot_rankings(self) -> List[dict]:
+        with self._lock:
+            return list(self._strategy_rankings)
+
+    def snapshot_signals(self) -> Dict[str, dict]:
+        with self._lock:
+            return dict(self._last_signals)
+
+
+# =============================================================================
+#   FASTAPI APP FACTORY
+# =============================================================================
+DASHBOARD_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Web Trading · Dashboard</title>
+<style>
+ body{font-family:system-ui,Segoe UI,sans-serif;margin:0;background:#0b0f17;color:#e6edf3}
+ header{padding:16px 24px;background:#111827;border-bottom:1px solid #1f2937}
+ h1{margin:0;font-size:18px} .credit{color:#22d3ee;font-size:12px;margin-top:4px}
+ .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;padding:16px}
+ .card{background:#111827;border:1px solid #1f2937;border-radius:8px;padding:12px}
+ .k{color:#9ca3af;font-size:12px} .v{font-size:20px;font-weight:600;margin-top:4px}
+ .tabs{display:flex;gap:8px;padding:0 16px;margin-top:8px}
+ .tab{padding:8px 14px;background:#111827;border:1px solid #1f2937;border-radius:6px;cursor:pointer}
+ .tab.active{background:#1f2937}
+ table{width:calc(100% - 32px);margin:8px 16px;border-collapse:collapse;font-size:13px}
+ th,td{padding:6px 8px;text-align:left;border-bottom:1px solid #1f2937}
+ .pos{color:#22c55e} .neg{color:#ef4444}
+</style>
+</head>
+<body>
+<header>
+  <h1>Web Trading · Live Dashboard</h1>
+  <div class="credit">Developed &amp; Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)</div>
+</header>
+<div class="grid" id="stats"></div>
+<div class="tabs">
+  <div class="tab active" data-tab="open">Open</div>
+  <div class="tab" data-tab="pending">Pending</div>
+  <div class="tab" data-tab="closed">Closed</div>
+</div>
+<table id="tbl"><thead></thead><tbody></tbody></table>
+<div class="grid" id="rankings" style="margin-top:24px"></div>
+<script>
+async function j(u){const r=await fetch(u);return await r.json();}
+function row(r,cols){return '<tr>'+cols.map(c=>'<td>'+String(r[c]??'')+'</td>').join('')+'</tr>';}
+async function refreshStats(){
+ const s=await j('/api/stats');
+ const items=[['Balance',s.balance],['Open',s.open_positions],['Pending',s.pending_orders],
+  ['Daily PnL $',s.daily_pnl_usd],['Daily PnL %',s.daily_pnl_pct],
+  ['Portfolio Risk %',s.portfolio_risk_pct],['Cycles',s.cycles]];
+ document.getElementById('stats').innerHTML=items.map(([k,v])=>
+  `<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+}
+async function refreshTable(tab){
+ let data=[],cols=[];
+ if(tab==='open'){data=await j('/api/positions/open');
+   cols=['ticket_id','symbol','side','entry','current_sl','current_tp','lot','breakeven_done','trailing_active'];}
+ if(tab==='pending'){data=await j('/api/positions/pending');
+   cols=['order_id','symbol','side','order_type','price','lot_size','sl','tp'];}
+ if(tab==='closed'){data=await j('/api/positions/closed');
+   cols=['ticket_id','symbol','side','entry_price','exit_price','realized_r','exit_reason','close_time'];}
+ document.querySelector('#tbl thead').innerHTML='<tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr>';
+ document.querySelector('#tbl tbody').innerHTML=data.map(r=>row(r,cols)).join('');
+}
+async function refreshRankings(){
+ const r=await j('/api/strategies/rankings');
+ document.getElementById('rankings').innerHTML=r.slice(0,12).map(x=>
+  `<div class="card"><div class="k">${x.strategy}</div>
+   <div class="v">w=${x.weight}</div>
+   <div class="k">win ${x.win_rate}% · avgR ${x.avg_r} · n=${x.trades}</div></div>`).join('');
+}
+document.querySelectorAll('.tab').forEach(t=>{
+ t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');refreshTable(t.dataset.tab);};
+});
+refreshStats();refreshTable('open');refreshRankings();
+setInterval(refreshStats,3000);
+setInterval(()=>refreshTable(document.querySelector('.tab.active').dataset.tab),3000);
+setInterval(refreshRankings,10000);
+</script>
+</body>
+</html>
+"""
+
+
+def create_app(state: TradingApplication) -> "FastAPI":
+    if not HAS_WEB:
+        raise RuntimeError("FastAPI/uvicorn not installed. `pip install fastapi uvicorn`")
+
+    app = FastAPI(
+        title="Web Trading Platform",
+        version="1.0.0",
+        description="Developed & Engineered by Engineer Abdulelah Sadiq "
+                    "(المهندس عبد الإله صادق)",
+    )
+
+    @app.get("/api/health")
+    async def health():
+        return {"status": "ok", "time": datetime.now(timezone.utc).isoformat()}
+
+    @app.get("/api/stats")
+    async def stats():
+        return state.snapshot_stats()
+
+    @app.get("/api/positions/open")
+    async def positions_open():
+        return state.snapshot_open()
+
+    @app.get("/api/positions/pending")
+    async def positions_pending():
+        return state.snapshot_pending()
+
+    @app.get("/api/positions/closed")
+    async def positions_closed(limit: int = 100):
+        return state.snapshot_closed(limit=limit)
+
+    @app.get("/api/strategies/rankings")
+    async def strategy_rankings():
+        return state.snapshot_rankings()
+
+    @app.get("/api/signals")
+    async def signals():
+        return state.snapshot_signals()
+
+    @app.get("/api/news/indicators")
+    async def news_indicators(impact: Optional[str] = None,
+                              keyword: Optional[str] = None):
+        events = state.news.get_events(impact=impact, keyword=keyword)
         return {
-            "timestamp": now.isoformat(),
-            "market_open": self.session_mgr.any_market_open(now),
-            "suspended": self.guard.is_suspended(now),
-            "capital": {
-                "balance": round(self.risk.capital, 2),
-                "risk_pct": self.risk.risk_per_trade,
-                "risk_usd": round(self.risk.capital * self.risk.risk_per_trade, 4),
-                "max_concurrent": self.risk.max_concurrent,
-                "mode": self.risk.automation_mode,
-            },
-            "sessions": sessions,
-            "positions": positions,
-            "assets": assets,
-            "scores": scores,
-            "min_score": self.scorer.min_score,
-            "demo": self.demo,
+            "source": "forexfactory",
+            "count": len(events),
+            "cpi": state.news.cpi_events()[:20],
+            "high_impact": state.news.high_impact()[:20],
+            "events": events[:100],
         }
 
-    async def _run_web(self) -> None:
+    @app.post("/api/shutdown")
+    async def shutdown():
+        state.request_shutdown()
+        return {"status": "shutdown_requested"}
+
+    @app.get("/", response_class=HTMLResponse)
+    async def dashboard():
+        return HTMLResponse(DASHBOARD_HTML)
+
+    @app.websocket("/ws/live")
+    async def ws_live(ws: WebSocket):
+        await ws.accept()
         try:
-            import uvicorn
-        except ImportError:
-            logger.error("uvicorn not installed; dashboard disabled")
+            while True:
+                payload = {
+                    "stats": state.snapshot_stats(),
+                    "open": state.snapshot_open(),
+                    "pending": state.snapshot_pending(),
+                    "rankings": state.snapshot_rankings(),
+                    "time": datetime.now(timezone.utc).isoformat(),
+                }
+                await ws.send_text(json.dumps(payload, default=str))
+                await asyncio.sleep(2.0)
+        except WebSocketDisconnect:
             return
-        config = uvicorn.Config(
-            "web_app.app:app",
-            host=self.web_host,
-            port=self.web_port,
-            log_level="info",
-            access_log=False,
-        )
-        server = uvicorn.Server(config)
-        logger.info("Web dashboard at http://%s:%d", self.web_host, self.web_port)
-        try:
-            await server.serve()
-        except asyncio.CancelledError:
-            raise
         except Exception:
-            logger.exception("Web server crashed")
+            return
+
+    return app
 
 
-# -------------------------------------------------------------------------
-# One-shot Monte Carlo simulation
-# -------------------------------------------------------------------------
-def run_simulation(
-    capital: float,
-    automation_mode: str,
-    runs: int,
-    trades_per_run: int,
-    seed: int,
-) -> None:
-    logger.info("Running Monte Carlo: %d runs x %d trades", runs, trades_per_run)
-    engine = AdaptiveICTEngine(
-        strategies=[
-            OrderBlockStrategy(),
-            FVGStrategy(),
-            LiquiditySweepStrategy(),
-        ]
+# =============================================================================
+#   ASYNC RUNTIME (trading thread + uvicorn)
+# =============================================================================
+async def run_runtime(state: TradingApplication, web_cfg: dict) -> None:
+    host = web_cfg.get("host", "0.0.0.0")
+    port = int(web_cfg.get("port", 8000))
+    log_level = web_cfg.get("log_level", "info")
+
+    # Start trading loop in a background thread
+    loop = asyncio.get_running_loop()
+    trading_future = loop.run_in_executor(None, state.run)
+
+    if not HAS_WEB:
+        logger.error("FastAPI not installed — running trading loop only (headless).")
+        try:
+            await trading_future
+        except asyncio.CancelledError:
+            pass
+        return
+
+    app = create_app(state)
+    uv_config = uvicorn.Config(
+        app=app, host=host, port=port, log_level=log_level, access_log=False,
     )
-    planner = ExitPlanner(min_rr=1.5)
-    risk = RiskManager(
-        capital=capital,
-        risk_per_trade=RISK_PER_TRADE,
-        automation_mode=automation_mode,
-    )
-    tm = TimeMachine(engine, planner, risk, seed=seed)
-    result = tm.run(runs=runs, trades_per_run=trades_per_run, synthetic_fallback=True)
-    print()
-    print(result.summary())
-    print()
-    print("Strategy performance snapshot:")
-    for sid, snap in engine.performance_snapshot().items():
-        print(f"  {sid:<16} {snap}")
+    uv_server = uvicorn.Server(uv_config)
 
-
-# -------------------------------------------------------------------------
-# CLI
-# -------------------------------------------------------------------------
-def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        prog="main.py",
-        description="Automated ICT/SMC trading bot orchestrator.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    p.add_argument("--capital", type=float, default=DEFAULT_CAPITAL,
-                   help="Starting capital in USD")
-    p.add_argument("--mode", choices=list(AUTOMATION_MODES), default="single",
-                   help="Automation mode (concurrency cap)")
-    p.add_argument("--live", action="store_true",
-                   help="Use live broker (requires wiring)")
-    p.add_argument("--paper", action="store_true", default=False,
-                   help="Use simulated broker (default)")
-    p.add_argument("--demo", action="store_true", default=True,
-                   help="Use synthetic feed (default when --live is absent)")
-    p.add_argument("--bar-seconds", type=int, default=30,
-                   help="Seconds between synthetic bar closes (demo)")
-    p.add_argument("--tick-seconds", type=float, default=1.0,
-                   help="Main loop tick interval")
-    p.add_argument("--with-web", action="store_true",
-                   help="Start the FastAPI dashboard alongside the bot")
-    p.add_argument("--web-host", default="0.0.0.0")
-    p.add_argument("--web-port", type=int, default=8000)
-    p.add_argument("--log-level", default="INFO",
-                   choices=["DEBUG", "INFO", "WARNING", "ERROR"])
-    p.add_argument("--log-file", default=None)
-    p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--sim", action="store_true",
-                   help="Run Monte Carlo simulation then exit")
-    p.add_argument("--sim-runs", type=int, default=10_000)
-    p.add_argument("--sim-trades", type=int, default=40)
-    return p.parse_args(argv)
-
-
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = parse_args(argv)
-    configure_logging(args.log_level, args.log_file)
-
-    # Paper/live resolution: live requires explicitly opting in AND a wired
-    # broker adapter; otherwise we default to paper.
-    paper = not args.live
-
-    if args.sim:
-        run_simulation(
-            capital=args.capital,
-            automation_mode=args.mode,
-            runs=args.sim_runs,
-            trades_per_run=args.sim_trades,
-            seed=args.seed,
-        )
-        return 0
-
-    bot = TradingBot(
-        capital=args.capital,
-        automation_mode=args.mode,
-        paper=paper,
-        demo=paper and not args.live,
-        bar_seconds=args.bar_seconds,
-        tick_seconds=args.tick_seconds,
-        seed=args.seed,
-        with_web=args.with_web,
-        web_host=args.web_host,
-        web_port=args.web_port,
-    )
+    logger.info("Web dashboard: http://%s:%d", host if host != "0.0.0.0" else "127.0.0.1", port)
 
     try:
-        asyncio.run(bot.run())
+        await uv_server.serve()
+    finally:
+        state.request_shutdown()
+        try:
+            await asyncio.wait_for(trading_future, timeout=60)
+        except asyncio.TimeoutError:
+            logger.warning("Trading thread did not stop in time; forcing exit.")
+        except Exception as e:
+            logger.error("Runtime shutdown error: %s", e)
+
+
+# =============================================================================
+#   SIGNAL HANDLING
+# =============================================================================
+_APP_REF: Dict[str, Optional[TradingApplication]] = {"app": None}
+
+
+def _signal_handler(signum, frame):
+    logger.warning("Signal %s received — initiating graceful shutdown.", signum)
+    if _APP_REF["app"] is not None:
+        _APP_REF["app"].request_shutdown()
+
+
+# =============================================================================
+#   ENTRY POINT
+# =============================================================================
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Web Trading Platform — Developed & Engineered by "
+                    "Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)"
+    )
+    parser.add_argument("--config", default="config/settings.yaml",
+                        help="Path to settings.yaml")
+    parser.add_argument("--log-level", default="INFO")
+    parser.add_argument("--web-host", default=None)
+    parser.add_argument("--web-port", default=None, type=int)
+    parser.add_argument("--headless", action="store_true",
+                        help="Run without web server")
+    args = parser.parse_args()
+
+    setup_logging(args.log_level)
+    print(BANNER)
+    logger.info("Booting Web Trading Platform v1.0")
+    logger.info("Developed & Engineered by Engineer Abdulelah Sadiq "
+                "(المهندس عبد الإله صادق)")
+
+    try:
+        config = load_config(args.config)
+    except Exception as e:
+        logger.critical("Cannot load config: %s", e)
+        sys.exit(1)
+
+    # Build application
+    try:
+        state = TradingApplication(config)
+    except Exception as e:
+        logger.critical("Failed to build TradingApplication: %s", e)
+        raise
+    _APP_REF["app"] = state
+
+    # Attach signal handlers
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
+
+    # Web config overrides
+    web_cfg = dict(config.get("web", {}) or {})
+    if args.web_host:
+        web_cfg["host"] = args.web_host
+    if args.web_port:
+        web_cfg["port"] = args.web_port
+    if args.headless:
+        HAS_EFFECTIVE_WEB = False
+    else:
+        HAS_EFFECTIVE_WEB = HAS_WEB
+
+    logger.info("Startup complete. Entering runtime loop.")
+
+    try:
+        if HAS_EFFECTIVE_WEB:
+            asyncio.run(run_runtime(state, web_cfg))
+        else:
+            # Headless: run trading loop directly (blocking)
+            state.run()
     except KeyboardInterrupt:
-        logger.info("Interrupted by user")
-        return 130
-    return 0
+        logger.warning("KeyboardInterrupt caught at top level.")
+        state.request_shutdown()
+    finally:
+        _APP_REF["app"] = None
+        logger.info("Platform stopped. Farewell.")
+        logger.info("— Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)")
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
