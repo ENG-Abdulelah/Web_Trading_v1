@@ -741,7 +741,6 @@ def api_fundamentals():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-
 @app.route("/api/timemachine/<signal_uid>")
 def api_timemachine(signal_uid: str):
     sig = DB.get_signal(signal_uid)
@@ -760,6 +759,7 @@ def api_timemachine(signal_uid: str):
         "ok": True, "cached": False, "result": result.to_dict(),
     })
 
+
 @app.route("/api/ping")
 def api_ping():
     """Lightweight keep-alive endpoint for external cron."""
@@ -777,10 +777,12 @@ if __name__ == "__main__":
     logger.info("=" * 60)
 
     st = GUARD.state()
-    logger.info("Market open=%s sessions=%s kill_zones=%s",
-                st.is_open,
-                [s["name"] for s in st.active_sessions],
-                [k["name"] for k in st.active_kill_zones])
+    logger.info(
+        "Market open=%s sessions=%s kill_zones=%s",
+        st.is_open,
+        [s["name"] for s in st.active_sessions],
+        [k["name"] for k in st.active_kill_zones],
+    )
 
     start_scheduler()
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
@@ -797,5 +799,6 @@ def _delayed_start_scheduler():
     except Exception as e:
         logger.error("Failed to start scheduler on import: %s", e)
 
+
 threading.Thread(target=_delayed_start_scheduler, daemon=True).start()
-     
+
