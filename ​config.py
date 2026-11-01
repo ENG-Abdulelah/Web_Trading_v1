@@ -1,133 +1,225 @@
 """
-config.py
-Configuration for an automated trading bot.
-
-Supported assets:
-  - Gold (XAU/USD)
-  - Silver (XAG/USD)
-  - Crude Oil (WTI/USD)
-  - EUR/USD
-  - GBP/USD
-  - USD/JPY
-
-Default capital is $50, risk per trade is 1.5% of capital.
-Timeframe presets are provided for scalping and swing trading.
-Automation modes allow either a single concurrent trade or up to three.
+Central configuration for Web_Trading_v1.
+Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
 """
 
-from typing import Dict, List, Any
+from datetime import time  # noqa: F401  (imported for convenience in type hints)
 
-# ---------------------------------------------------------------------
-# Capital and risk management
-# ---------------------------------------------------------------------
-DEFAULT_CAPITAL: float = 50.0          # USD
-RISK_PER_TRADE: float = 0.015          # 1.5% of capital
-RISK_AMOUNT_PER_TRADE: float = DEFAULT_CAPITAL * RISK_PER_TRADE  # $0.75
+# =============================================================================
+# APP IDENTITY
+# =============================================================================
+APP_NAME    = "Web Trading Bot"
+APP_VERSION = "1.0.0"
+AUTHOR      = "Engineer Abdulelah Sadiq"
+AUTHOR_AR   = "المهندس عبد الإله صادق"
 
-# ---------------------------------------------------------------------
-# Supported assets
-# ---------------------------------------------------------------------
-# pip_size and contract_size are included as common defaults.
-# Adjust them to match your broker / instrument specifications.
-ASSETS: List[Dict[str, Any]] = [
-    {
-        "symbol": "XAU/USD",
-        "name": "Gold",
-        "asset_class": "commodity",
-        "pip_size": 0.01,
-        "contract_size": 100,
-    },
-    {
-        "symbol": "XAG/USD",
-        "name": "Silver",
-        "asset_class": "commodity",
-        "pip_size": 0.001,
-        "contract_size": 5000,
-    },
-    {
-        "symbol": "WTI/USD",
-        "name": "Crude Oil",
-        "asset_class": "commodity",
-        "pip_size": 0.01,
-        "contract_size": 1000,
-    },
-    {
-        "symbol": "EUR/USD",
-        "name": "Euro / US Dollar",
-        "asset_class": "forex",
-        "pip_size": 0.0001,
-        "contract_size": 100000,
-    },
-    {
-        "symbol": "GBP/USD",
-        "name": "British Pound / US Dollar",
-        "asset_class": "forex",
-        "pip_size": 0.0001,
-        "contract_size": 100000,
-    },
-    {
-        "symbol": "USD/JPY",
-        "name": "US Dollar / Japanese Yen",
-        "asset_class": "forex",
-        "pip_size": 0.01,
-        "contract_size": 100000,
-    },
-]
+# =============================================================================
+# TRADING STYLES & TIMEFRAMES
+# =============================================================================
+TRADING_STYLES = ["Swing", "Scalping"]
 
-ASSET_SYMBOLS: List[str] = [asset["symbol"] for asset in ASSETS]
+# Swing — higher timeframe directional plays
+SWING_TIMEFRAMES    = ["1W", "1D", "4H", "1H"]
 
-# ---------------------------------------------------------------------
-# Timeframe configurations
-# ---------------------------------------------------------------------
-# Each preset defines entry, trend, and exit timeframes.
-# stop_loss_pips / take_profit_pips are example values and should be
-# tuned per asset and strategy.
-TIMEFRAMES: Dict[str, Dict[str, Any]] = {
-    "scalping": {
-        "entry": "1m",
-        "trend": "5m",
-        "exit": "1m",
-        "stop_loss_pips": 10,
-        "take_profit_pips": 20,
+# Scalping — low-latency intraday plays
+SCALPING_TIMEFRAMES     = ["1W", "1D", "1H", "5M"]
+SCALPING_TIMEFRAMES_ALT = ["1W", "1D", "1H", "15M", "1M"]  # optional variant
+
+# Minutes-per-bar mapping (used for lookback / expiry calculations)
+TIMEFRAME_MINUTES = {
+    "1M":  1,
+    "5M":  5,
+    "15M": 15,
+    "30M": 30,
+    "1H":  60,
+    "4H":  240,
+    "1D":  1440,
+    "1W":  10080,
+}
+
+# Per-style timeframe stack used by signal engines
+STYLE_TIMEFRAMES = {
+    "Swing":    SWING_TIMEFRAMES,
+    "Scalping": SCALPING_TIMEFRAMES,
+}
+
+# Timeframe used to enter the trade (LTF)
+STYLE_ENTRY_TF = {
+    "Swing":    "1H",
+    "Scalping": "5M",
+}
+
+# Timeframe used for HTF bias (HTF)
+STYLE_HTF_BIAS_TF = {
+    "Swing":    "1D",
+    "Scalping": "1H",
+}
+
+# =============================================================================
+# SESSIONS (all times UTC, inclusive start / exclusive end)
+# =============================================================================
+SESSIONS = {
+    "sydney": {
+        "name":    "Sydney",
+        "name_ar": "سيدني",
+        "start":   "21:00",
+        "end":     "06:00",   # crosses midnight
+        "active":  True,
     },
-    "swing": {
-        "entry": "1h",
-        "trend": "4h",
-        "exit": "1h",
-        "stop_loss_pips": 50,
-        "take_profit_pips": 150,
+    "tokyo": {
+        "name":    "Tokyo",
+        "name_ar": "طوكيو",
+        "start":   "00:00",
+        "end":     "09:00",
+        "active":  True,
+    },
+    "london": {
+        "name":    "London",
+        "name_ar": "لندن",
+        "start":   "07:00",
+        "end":     "16:00",
+        "active":  True,
+    },
+    "new_york": {
+        "name":    "New York",
+        "name_ar": "نيويورك",
+        "start":   "12:00",
+        "end":     "21:00",
+        "active":  True,
     },
 }
 
-DEFAULT_TIMEFRAME: str = "scalping"
-
-# ---------------------------------------------------------------------
-# Automation modes
-# ---------------------------------------------------------------------
-AUTOMATION_MODES: Dict[str, Dict[str, Any]] = {
-    "single": {
-        "max_concurrent_trades": 1,
-        "description": "Only one trade at a time across all assets.",
+# =============================================================================
+# ICT KILL ZONES (UTC) — highest-conviction windows
+# =============================================================================
+KILL_ZONES = {
+    "asian_kz": {
+        "name":     "Asian Kill Zone",
+        "name_ar":  "منطقة قتل آسيا",
+        "start":    "00:00",
+        "end":      "03:00",
+        "priority": "medium",
+        "styles":   ["Swing"],
     },
-    "multi": {
-        "max_concurrent_trades": 3,
-        "description": "Up to three concurrent trades across all assets.",
+    "london_kz": {
+        "name":     "London Kill Zone",
+        "name_ar":  "منطقة قتل لندن",
+        "start":    "07:00",
+        "end":      "10:00",
+        "priority": "high",
+        "styles":   ["Swing", "Scalping"],
+    },
+    "ny_am_kz": {
+        "name":     "New York AM Kill Zone",
+        "name_ar":  "منطقة قتل نيويورك الصباحية",
+        "start":    "12:00",
+        "end":      "15:00",
+        "priority": "high",
+        "styles":   ["Swing", "Scalping"],
+    },
+    "london_close_kz": {
+        "name":     "London Close Kill Zone",
+        "name_ar":  "منطقة قتل إغلاق لندن",
+        "start":    "15:00",
+        "end":      "17:00",
+        "priority": "medium",
+        "styles":   ["Swing"],
     },
 }
 
-DEFAULT_AUTOMATION_MODE: str = "single"
+# =============================================================================
+# DEAD LIQUIDITY ZONES (UTC) — HARD BLOCK, no trades allowed
+# =============================================================================
+DEAD_LIQUIDITY_ZONES = {
+    "asian_lunch": {
+        "name":    "Asian Session Lunch",
+        "name_ar": "استراحة الجلسة الآسيوية",
+        "start":   "03:00",
+        "end":     "05:00",
+    },
+    "london_lunch": {
+        "name":    "London Mid-Session Lull",
+        "name_ar": "هدوء منتصف لندن",
+        "start":   "10:00",
+        "end":     "11:00",
+    },
+    "ny_lunch": {
+        "name":    "New York Lunch",
+        "name_ar": "استراحة نيويورك",
+        "start":   "16:00",
+        "end":     "17:00",
+    },
+    "daily_rollover": {
+        "name":    "Daily Rollover",
+        "name_ar": "التحول اليومي",
+        "start":   "20:55",
+        "end":     "21:15",
+    },
+}
 
-# ---------------------------------------------------------------------
-# Helper functions
-# ---------------------------------------------------------------------
-def get_max_concurrent_trades(mode: str = DEFAULT_AUTOMATION_MODE) -> int:
-    """Return the maximum number of concurrent trades for a mode."""
-    return AUTOMATION_MODES[mode]["max_concurrent_trades"]
+# =============================================================================
+# MARKET TRANSITIONS (UTC) — HARD BLOCK, unstable price action
+# =============================================================================
+MARKET_TRANSITIONS = {
+    "london_pre_open": {
+        "name":    "London Pre-Open",
+        "name_ar": "ما قبل افتتاح لندن",
+        "start":   "06:45",
+        "end":     "07:15",
+    },
+    "ny_pre_open": {
+        "name":    "New York Pre-Open",
+        "name_ar": "ما قبل افتتاح نيويورك",
+        "start":   "11:45",
+        "end":     "12:15",
+    },
+    "london_close": {
+        "name":    "London Close Transition",
+        "name_ar": "تحول إغلاق لندن",
+        "start":   "15:45",
+        "end":     "16:15",
+    },
+    "daily_rollover_transition": {
+        "name":    "Rollover Transition",
+        "name_ar": "تحول يومي",
+        "start":   "20:50",
+        "end":     "21:20",
+    },
+}
 
+# =============================================================================
+# WEEKEND RULES (UTC)
+# =============================================================================
+FOREX_CLOSE_FRIDAY_HOUR = 21   # Friday 21:00 UTC → market closes
+FOREX_OPEN_SUNDAY_HOUR  = 21   # Sunday 21:00 UTC → market opens
 
-def get_risk_amount(
-    capital: float = DEFAULT_CAPITAL,
-    risk_pct: float = RISK_PER_TRADE,
-) -> float:
-    """Return the absolute risk amount in USD for a single trade."""
-    return capital * risk_pct
+# Instruments that close earlier on Fridays (UTC hour)
+EARLY_CLOSE_INSTRUMENTS = {
+    "XAU/USD": 20,
+    "XAG/USD": 20,
+    "US30":    20,
+    "NAS100":  20,
+}
+
+# =============================================================================
+# RISK PARAMETERS PER STYLE
+# =============================================================================
+RISK_PER_TRADE = {
+    "Swing":    1.0,   # % of account equity
+    "Scalping": 0.5,
+}
+
+MAX_OPEN_POSITIONS = {
+    "Swing":    5,
+    "Scalping": 3,
+}
+
+MIN_RR = {
+    "Swing":    2.0,
+    "Scalping": 1.5,
+}
+
+# =============================================================================
+# TIMEZONE
+# =============================================================================
+TIMEZONE = "UTC"
