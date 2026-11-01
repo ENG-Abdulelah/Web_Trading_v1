@@ -1,0 +1,886 @@
+{# web_app/templates/index.html #}
+<!DOCTYPE html>
+<html lang="{{ lang }}" dir="{{ dir }}">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0f1a" />
+    <title>{{ T.app_title }}</title>
+    <style>
+        /* ---------- Theme ---------- */
+        :root {
+            --bg:           #0a0f1a;
+            --surface:      #121a2b;
+            --surface-2:    #1a2438;
+            --border:       #243049;
+            --text:         #e6edf7;
+            --muted:        #8b9bb4;
+            --accent:       #38bdf8;
+            --accent-2:     #0ea5e9;
+            --green:        #22c55e;
+            --red:          #ef4444;
+            --amber:        #f59e0b;
+            --shadow:       0 4px 20px rgba(0,0,0,0.35);
+            --radius:       14px;
+            --radius-sm:    10px;
+            --gap:          16px;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto,
+                         "Noto Sans Arabic", "Tahoma", sans-serif;
+            font-size: 15px;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            min-height: 100vh;
+            background:
+                radial-gradient(1200px 600px at 80% -10%, rgba(56,189,248,0.06), transparent 60%),
+                radial-gradient(900px 500px at 0% 100%, rgba(34,197,94,0.04), transparent 60%),
+                var(--bg);
+        }
+
+        /* ---------- Layout ---------- */
+        .container {
+            max-width: 1280px;
+            margin-inline: auto;
+            padding: 16px;
+        }
+
+        header.topbar {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            backdrop-filter: blur(12px);
+            background: rgba(10,15,26,0.78);
+            border-block-end: 1px solid var(--border);
+        }
+        .topbar-inner {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            padding-block: 12px;
+        }
+        .brand {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+        .brand h1 {
+            font-size: clamp(1rem, 2.2vw, 1.2rem);
+            margin: 0;
+            letter-spacing: 0.2px;
+        }
+        .brand .sub {
+            font-size: 0.78rem;
+            color: var(--muted);
+        }
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        /* ---------- Pills & buttons ---------- */
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 10px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--muted);
+            white-space: nowrap;
+        }
+        .pill .dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--muted);
+            box-shadow: 0 0 0 0 currentColor;
+        }
+        .pill.ok    { color: var(--green); border-color: rgba(34,197,94,0.35); }
+        .pill.ok .dot { background: var(--green); animation: pulse 2s infinite; }
+        .pill.bad   { color: var(--red);   border-color: rgba(239,68,68,0.35); }
+        .pill.bad .dot { background: var(--red); }
+        .pill.warn  { color: var(--amber); border-color: rgba(245,158,11,0.35); }
+        .pill.warn .dot { background: var(--amber); }
+        .pill.accent{ color: var(--accent);border-color: rgba(56,189,248,0.35);}
+        .pill.accent .dot { background: var(--accent); }
+
+        @keyframes pulse {
+            0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.55); }
+            70%  { box-shadow: 0 0 0 8px rgba(34,197,94,0); }
+            100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+        }
+
+        .lang-toggle {
+            display: inline-flex;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 2px;
+            overflow: hidden;
+        }
+        .lang-toggle a {
+            padding: 5px 12px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--muted);
+            text-decoration: none;
+            border-radius: 999px;
+            transition: background 0.15s, color 0.15s;
+        }
+        .lang-toggle a:hover { color: var(--text); }
+        .lang-toggle a.active {
+            background: var(--accent);
+            color: #06121c;
+        }
+
+        /* ---------- Config bar ---------- */
+        .config-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px;
+            margin-block: 16px;
+        }
+        .config-item {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 10px 12px;
+        }
+        .config-item .label {
+            font-size: 0.7rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-block-end: 4px;
+        }
+        .config-item .value {
+            font-size: 1.05rem;
+            font-weight: 700;
+        }
+
+        /* ---------- Sections ---------- */
+        main {
+            display: grid;
+            gap: var(--gap);
+            grid-template-columns: 1fr;
+        }
+        @media (min-width: 900px) {
+            main {
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                grid-template-areas:
+                    "sessions  positions"
+                    "assets    scores";
+            }
+            #sessions  { grid-area: sessions;  }
+            #positions { grid-area: positions; }
+            #assets    { grid-area: assets;    }
+            #scores    { grid-area: scores;    }
+        }
+        @media (min-width: 1240px) {
+            main {
+                grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, 1fr);
+                grid-template-areas:
+                    "sessions positions positions"
+                    "assets   scores    scores";
+            }
+        }
+
+        section.card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        section.card > header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 14px 16px;
+            border-block-end: 1px solid var(--border);
+            background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+        }
+        section.card > header h2 {
+            margin: 0;
+            font-size: 0.92rem;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            color: var(--muted);
+            font-weight: 700;
+        }
+        section.card > .body {
+            padding: 14px 16px;
+            overflow: auto;
+        }
+
+        /* ---------- Sessions ---------- */
+        .sessions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+        .session {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+        .session::before {
+            content: "";
+            position: absolute;
+            inset-inline-start: 0;
+            inset-block-start: 0;
+            inset-block-end: 0;
+            width: 3px;
+            background: var(--muted);
+            opacity: 0.6;
+        }
+        .session.active::before { background: var(--green); opacity: 1; }
+        .session .name {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+            font-weight: 700;
+            font-size: 0.92rem;
+        }
+        .session .times {
+            font-size: 0.75rem;
+            color: var(--muted);
+            font-variant-numeric: tabular-nums;
+        }
+        .session .countdown {
+            font-size: 0.75rem;
+            color: var(--accent);
+            font-variant-numeric: tabular-nums;
+        }
+        .badge-active {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: rgba(34,197,94,0.14);
+            color: var(--green);
+            border: 1px solid rgba(34,197,94,0.35);
+        }
+        .badge-inactive {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: rgba(139,155,180,0.14);
+            color: var(--muted);
+            border: 1px solid var(--border);
+        }
+
+        /* ---------- Positions ---------- */
+        .position {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 12px;
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 10px;
+            margin-block-end: 10px;
+        }
+        .position:last-child { margin-block-end: 0; }
+        .position .line1 {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-block-end: 8px;
+        }
+        .position .sym {
+            font-weight: 800;
+            font-size: 1rem;
+        }
+        .badge-long {
+            background: rgba(34,197,94,0.14);
+            color: var(--green);
+            border: 1px solid rgba(34,197,94,0.35);
+        }
+        .badge-short {
+            background: rgba(239,68,68,0.14);
+            color: var(--red);
+            border: 1px solid rgba(239,68,68,0.35);
+        }
+        .badge-long, .badge-short {
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 999px;
+            text-transform: uppercase;
+        }
+        .position .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+            gap: 8px;
+        }
+        .position .kv {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .position .kv .k {
+            font-size: 0.68rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+        .position .kv .v {
+            font-size: 0.86rem;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+        .position .pnl {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            justify-content: center;
+            gap: 2px;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+        .position .pnl .r { font-size: 1.15rem; font-weight: 800; }
+        .position .pnl .usd { font-size: 0.8rem; }
+        .pnl-pos { color: var(--green); }
+        .pnl-neg { color: var(--red); }
+
+        .empty-state {
+            text-align: center;
+            padding: 28px 12px;
+            color: var(--muted);
+        }
+        .empty-state .title { font-weight: 700; color: var(--text); margin-block-end: 4px; }
+        .empty-state .hint  { font-size: 0.85rem; }
+
+        /* ---------- Assets ---------- */
+        .assets-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px;
+        }
+        .asset {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .asset .row1 {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 6px;
+        }
+        .asset .sym { font-weight: 800; font-size: 0.92rem; }
+        .asset .price {
+            font-size: 1.05rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+        .asset .chg {
+            font-size: 0.78rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+        .asset .chg.pos { color: var(--green); }
+        .asset .chg.neg { color: var(--red); }
+        .asset .chg.flat{ color: var(--muted); }
+
+        /* ---------- Scores ---------- */
+        .scores-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 10px;
+        }
+        .score {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 12px;
+        }
+        .score.approved { border-color: rgba(34,197,94,0.5); box-shadow: 0 0 0 1px rgba(34,197,94,0.15) inset; }
+        .score.rejected { opacity: 0.85; }
+        .score .row1 {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 6px;
+            margin-block-end: 8px;
+        }
+        .score .sym { font-weight: 800; }
+        .score .dir {
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 999px;
+            text-transform: uppercase;
+        }
+        .score .dir.long  { color: var(--green); background: rgba(34,197,94,0.14); border: 1px solid rgba(34,197,94,0.35); }
+        .score .dir.short { color: var(--red);   background: rgba(239,68,68,0.14); border: 1px solid rgba(239,68,68,0.35); }
+        .score .total {
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+            margin-block-end: 8px;
+        }
+        .score .total .num { font-size: 1.55rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+        .score .total .den { color: var(--muted); font-size: 0.82rem; }
+        .score .total .status {
+            margin-inline-start: auto;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 999px;
+        }
+        .status.approved { color: var(--green); background: rgba(34,197,94,0.14); border: 1px solid rgba(34,197,94,0.35); }
+        .status.rejected { color: var(--red);   background: rgba(239,68,68,0.14); border: 1px solid rgba(239,68,68,0.35); }
+
+        .bar-row {
+            display: grid;
+            grid-template-columns: 70px 1fr 32px;
+            align-items: center;
+            gap: 8px;
+            margin-block-end: 6px;
+            font-size: 0.72rem;
+        }
+        .bar-row .lbl { color: var(--muted); }
+        .bar-row .num { color: var(--muted); text-align: end; font-variant-numeric: tabular-nums; }
+        .bar {
+            height: 6px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+        .bar .fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-2), var(--accent));
+            border-radius: 999px;
+            transition: width 0.4s ease;
+        }
+
+        /* ---------- Suspended banner ---------- */
+        .suspended-banner {
+            display: none;
+            background: linear-gradient(90deg, rgba(245,158,11,0.12), rgba(245,158,11,0.03));
+            border: 1px solid rgba(245,158,11,0.4);
+            color: var(--amber);
+            border-radius: var(--radius-sm);
+            padding: 10px 14px;
+            margin-block: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: none;
+            align-items: center;
+            gap: 8px;
+        }
+        .suspended-banner.visible { display: flex; }
+
+        /* ---------- Footer ---------- */
+        footer {
+            margin-block-start: 24px;
+            padding-block: 16px;
+            color: var(--muted);
+            font-size: 0.75rem;
+            text-align: center;
+        }
+
+        /* ---------- RTL overrides ---------- */
+        [dir="rtl"] .bar-row { grid-template-columns: 32px 1fr 70px; }
+        [dir="rtl"] .bar-row .num { text-align: start; }
+        [dir="rtl"] .position .pnl { align-items: flex-start; }
+        [dir="rtl"] .score .total .status { margin-inline-start: 0; margin-inline-end: auto; }
+
+        /* ---------- Scrollbar ---------- */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #33415f; }
+    </style>
+</head>
+<body>
+
+<header class="topbar">
+    <div class="container topbar-inner">
+        <div class="brand">
+            <h1>{{ T.app_title }}</h1>
+            <span class="sub">{{ T.app_subtitle }}</span>
+        </div>
+        <div class="topbar-actions">
+            <span id="conn-pill" class="pill bad"><span class="dot"></span><span id="conn-text">{{ T.disconnected }}</span></span>
+            <span id="market-pill" class="pill {{ 'ok' if state.market_open else 'bad' }}">
+                <span class="dot"></span>
+                <span id="market-text">{{ T.market_open if state.market_open else T.market_closed }}</span>
+            </span>
+            <span class="pill accent"><span class="dot"></span>{% if state.demo %}{{ T.demo }}{% else %}{{ T.live }}{% endif %}</span>
+            <div class="lang-toggle" role="group" aria-label="{{ T.language }}">
+                {% for code, label in lang_names.items() %}
+                    <a href="/lang/{{ code }}"
+                       class="{{ 'active' if code == lang else '' }}"
+                       aria-current="{{ 'true' if code == lang else 'false' }}">{{ label }}</a>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</header>
+
+<div class="container">
+
+    {% if state.suspended %}
+    <div class="suspended-banner visible">
+        <span>⏸</span>
+        <span>{{ T.suspended }} — {{ T.suspended_reason }} {{ '%.0f'|format(0) }}s</span>
+    </div>
+    {% endif %}
+
+    <!-- Config bar -->
+    <div class="config-bar" id="config-bar">
+        <div class="config-item">
+            <div class="label">{{ T.capital }}</div>
+            <div class="value" id="cfg-capital">${{ '%.2f'|format(state.capital.balance) }}</div>
+        </div>
+        <div class="config-item">
+            <div class="label">{{ T.risk_per_trade }}</div>
+            <div class="value" id="cfg-risk">${{ '%.2f'|format(state.capital.risk_usd) }} <span style="color:var(--muted);font-weight:500;font-size:0.8rem;">({{ '%.1f'|format(state.capital.risk_pct * 100) }}%)</span></div>
+        </div>
+        <div class="config-item">
+            <div class="label">{{ T.max_concurrent }}</div>
+            <div class="value" id="cfg-maxconc">{{ state.capital.max_concurrent }}</div>
+        </div>
+        <div class="config-item">
+            <div class="label">{{ T.mode }}</div>
+            <div class="value" id="cfg-mode">{{ T.mode_single if state.capital.mode == 'single' else T.mode_multi }}</div>
+        </div>
+    </div>
+
+    <main>
+        <!-- Sessions -->
+        <section class="card" id="sessions">
+            <header>
+                <h2>🕐 {{ T.sessions }}</h2>
+                <span class="pill accent" id="session-count">{{ state.sessions|selectattr('active')|list|length }} / {{ state.sessions|length }}</span>
+            </header>
+            <div class="body">
+                <div class="sessions-grid" id="sessions-grid"></div>
+            </div>
+        </section>
+
+        <!-- Positions -->
+        <section class="card" id="positions">
+            <header>
+                <h2>📊 {{ T.positions }}</h2>
+                <span class="pill" id="positions-count">{{ state.positions|length }} / {{ state.capital.max_concurrent }}</span>
+            </header>
+            <div class="body" id="positions-body"></div>
+        </section>
+
+        <!-- Assets -->
+        <section class="card" id="assets">
+            <header>
+                <h2>💰 {{ T.assets }}</h2>
+                <span class="pill" id="assets-count">{{ state.assets|length }}</span>
+            </header>
+            <div class="body">
+                <div class="assets-grid" id="assets-grid"></div>
+            </div>
+        </section>
+
+        <!-- Scores -->
+        <section class="card" id="scores">
+            <header>
+                <h2>⭐ {{ T.scores }}</h2>
+                <span class="pill warn" id="min-score-pill">{{ T.min_score }}: {{ state.min_score }}/10</span>
+            </header>
+            <div class="body">
+                <div class="scores-grid" id="scores-grid"></div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div>{{ T.footer_note }}</div>
+        <div style="margin-block-start:6px;color:var(--muted);" id="last-updated">{{ T.last_updated }}: —</div>
+    </footer>
+</div>
+
+<script>
+(function() {
+    "use strict";
+
+    // ---- Translations (mirrored into JS for client-side re-rendering) ----
+    const T = {{ T|tojson }};
+    const LANG = {{ lang|tojson }};
+    const IS_RTL = {{ (dir == "rtl")|tojson }};
+
+    // ---- Initial state ----
+    let state = {{ initial_json|safe }};
+
+    // ---- Utilities ----
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s == null ? "" : s)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    const fmtNum = (v, d) => {
+        if (v == null || isNaN(v)) return "—";
+        return Number(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+    };
+    const fmtPct = (v) => (v > 0 ? "+" : "") + v.toFixed(2) + "%";
+    const fmtDuration = (secs) => {
+        secs = Math.max(0, Math.round(secs));
+        const h = Math.floor(secs / 3600);
+        const m = Math.floor((secs % 3600) / 60);
+        const s = secs % 60;
+        if (h > 0) return `${h}h ${m}m`;
+        if (m > 0) return `${m}m ${s}s`;
+        return `${s}s`;
+    };
+    const localT = (iso) => {
+        try {
+            const d = new Date(iso);
+            return d.toLocaleTimeString(LANG === "ar" ? "ar-EG" : "en-GB", { hour: "2-digit", minute: "2-digit" });
+        } catch { return iso; }
+    };
+
+    // ---- Renderers ----
+    function renderHeader() {
+        const market = $("market-pill");
+        const marketText = $("market-text");
+        if (state.market_open) {
+            market.className = "pill ok";
+            marketText.textContent = T.market_open;
+        } else {
+            market.className = "pill bad";
+            marketText.textContent = T.market_closed;
+        }
+        $("cfg-capital").textContent = "$" + fmtNum(state.capital.balance, 2);
+        $("cfg-risk").innerHTML =
+            "$" + fmtNum(state.capital.risk_usd, 2) +
+            ' <span style="color:var(--muted);font-weight:500;font-size:0.8rem;">(' +
+            (state.capital.risk_pct * 100).toFixed(1) + "%)</span>";
+        $("cfg-maxconc").textContent = state.capital.max_concurrent;
+        $("cfg-mode").textContent = state.capital.mode === "single" ? T.mode_single : T.mode_multi;
+    }
+
+    function renderSessions() {
+        const grid = $("sessions-grid");
+        const activeCount = state.sessions.filter(s => s.active).length;
+        $("session-count").textContent = activeCount + " / " + state.sessions.length;
+
+        grid.innerHTML = state.sessions.map(s => {
+            const label = T[s.label_key] || s.id;
+            const stateLabel = s.active
+                ? '<span class="badge-active"><span class="dot" style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>' + T.active + '</span>'
+                : '<span class="badge-inactive">' + T.inactive + '</span>';
+            const changeLabel = T[s.next_change_label_key] || s.next_change_label_key;
+            return `
+                <div class="session ${s.active ? "active" : ""}">
+                    <div class="name">
+                        <span>${esc(label)}</span>
+                        ${stateLabel}
+                    </div>
+                    <div class="times">${esc(s.open)} – ${esc(s.close)} ${esc(T.utc)}</div>
+                    <div class="countdown">${esc(changeLabel)} ${esc(fmtDuration(s.next_change_secs))}</div>
+                </div>`;
+        }).join("");
+    }
+
+    function renderPositions() {
+        const body = $("positions-body");
+        $("positions-count").textContent = state.positions.length + " / " + state.capital.max_concurrent;
+
+        if (!state.positions.length) {
+            body.innerHTML =
+                '<div class="empty-state">' +
+                '<div class="title">' + esc(T.no_positions) + '</div>' +
+                '<div class="hint">' + esc(T.no_positions_hint) + '</div>' +
+                '</div>';
+            return;
+        }
+
+        body.innerHTML = state.positions.map(p => {
+            const sideClass = p.side === "long" ? "badge-long" : "badge-short";
+            const sideLabel = p.side === "long" ? T.long : T.short;
+            const pnlClass = p.pnl_r >= 0 ? "pnl-pos" : "pnl-neg";
+            const pnlSign = p.pnl_r >= 0 ? "+" : "";
+            return `
+                <div class="position">
+                    <div>
+                        <div class="line1">
+                            <span class="sym">${esc(p.symbol)}</span>
+                            <span class="${sideClass}">${esc(sideLabel)}</span>
+                            <span class="pill" style="padding:1px 8px;font-size:0.68rem;">${esc(p.strategy)}</span>
+                        </div>
+                        <div class="grid">
+                            <div class="kv"><span class="k">${esc(T.entry)}</span><span class="v">${fmtNum(p.entry, 5)}</span></div>
+                            <div class="kv"><span class="k">${esc(T.stop_loss)}</span><span class="v">${fmtNum(p.stop_loss, 5)}</span></div>
+                            <div class="kv"><span class="k">${esc(T.take_profit)}</span><span class="v">${fmtNum(p.take_profit, 5)}</span></div>
+                            <div class="kv"><span class="k">${esc(T.lots)}</span><span class="v">${fmtNum(p.lots, 2)}</span></div>
+                            <div class="kv"><span class="k">${esc(T.rr)}</span><span class="v">1:${fmtNum(p.rr, 2)}</span></div>
+                            <div class="kv"><span class="k">${esc(T.risk)}</span><span class="v">$${fmtNum(p.risk_usd, 2)}</span></div>
+                        </div>
+                    </div>
+                    <div class="pnl ${pnlClass}">
+                        <div class="r">${pnlSign}${fmtNum(p.pnl_r, 2)}R</div>
+                        <div class="usd">${pnlSign}$${fmtNum(Math.abs(p.pnl_usd), 2)}</div>
+                    </div>
+                </div>`;
+        }).join("");
+    }
+
+    function renderAssets() {
+        $("assets-count").textContent = state.assets.length;
+        $("assets-grid").innerHTML = state.assets.map(a => {
+            const chg = a.change_pct;
+            const cls = chg > 0.001 ? "pos" : (chg < -0.001 ? "neg" : "flat");
+            const decimals = a.price > 100 ? 2 : (a.price > 10 ? 3 : 5);
+            return `
+                <div class="asset">
+                    <div class="row1">
+                        <span class="sym">${esc(a.symbol)}</span>
+                        <span class="pill ${a.open ? "ok" : "bad"}" style="padding:1px 8px;font-size:0.65rem;">
+                            <span class="dot" style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>
+                            ${a.open ? esc(T.market_open) : esc(T.market_closed)}
+                        </span>
+                    </div>
+                    <div class="price">${fmtNum(a.price, decimals)}</div>
+                    <div class="chg ${cls}">${fmtPct(chg)}</div>
+                </div>`;
+        }).join("");
+    }
+
+    function renderScores() {
+        $("scores-grid").innerHTML = state.scores.map(s => {
+            const dirClass = s.direction === "long" ? "long" : "short";
+            const dirLabel = s.direction === "long" ? T.long : T.short;
+            const statusCls = s.approved ? "approved" : "rejected";
+            const statusTxt = s.approved ? T.approved : T.rejected;
+            const bar = (labelKey, value) => {
+                const pct = Math.max(0, Math.min(100, value * 10));
+                return `
+                    <div class="bar-row">
+                        <span class="lbl">${esc(T[labelKey])}</span>
+                        <div class="bar"><div class="fill" style="width:${pct}%"></div></div>
+                        <span class="num">${fmtNum(value, 1)}</span>
+                    </div>`;
+            };
+            return `
+                <div class="score ${statusCls}">
+                    <div class="row1">
+                        <span class="sym">${esc(s.symbol)}</span>
+                        <span class="dir ${dirClass}">${esc(dirLabel)}</span>
+                    </div>
+                    <div class="total">
+                        <span class="num">${fmtNum(s.total, 1)}</span>
+                        <span class="den">/ 10</span>
+                        <span class="status ${statusCls}">${esc(statusTxt)}</span>
+                    </div>
+                    ${bar("score_technical", s.technical)}
+                    ${bar("score_macro", s.macro)}
+                    ${bar("score_geo", s.geopolitical)}
+                </div>`;
+        }).join("");
+    }
+
+    function renderAll() {
+        renderHeader();
+        renderSessions();
+        renderPositions();
+        renderAssets();
+        renderScores();
+        $("last-updated").textContent = T.last_updated + ": " + localT(state.timestamp);
+    }
+
+    // ---- WebSocket ----
+    let ws = null;
+    let retryDelay = 1000;
+
+    function setConnection(ok) {
+        const pill = $("conn-pill");
+        const text = $("conn-text");
+        if (ok) {
+            pill.className = "pill ok";
+            text.textContent = T.connected;
+        } else {
+            pill.className = "pill bad";
+            text.textContent = T.disconnected;
+        }
+    }
+
+    function connect() {
+        try {
+            const proto = location.protocol === "https:" ? "wss:" : "ws:";
+            ws = new WebSocket(proto + "//" + location.host + "/ws");
+
+            ws.onopen = () => {
+                setConnection(true);
+                retryDelay = 1000;
+            };
+            ws.onclose = () => {
+                setConnection(false);
+                setTimeout(connect, retryDelay);
+                retryDelay = Math.min(retryDelay * 1.6, 15000);
+            };
+            ws.onerror = () => setConnection(false);
+            ws.onmessage = (ev) => {
+                try {
+                    state = JSON.parse(ev.data);
+                    renderAll();
+                } catch (e) { /* ignore malformed */ }
+            };
+        } catch (e) {
+            setConnection(false);
+            setTimeout(connect, retryDelay);
+        }
+    }
+
+    // Heartbeat so the server can detect dead connections.
+    setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            try { ws.send("ping"); } catch (e) {}
+        }
+    }, 30000);
+
+    // Initial render (server-side state) + connect
+    renderAll();
+    connect();
+})();
+</script>
+</body>
+</html>
