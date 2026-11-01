@@ -1,0 +1,40 @@
+# requirements.txt
+# ---------------------------------------------------------------------------
+# Trading Bot — runtime dependencies
+# ---------------------------------------------------------------------------
+# Python 3.10+ recommended (uses PEP 604 unions and zoneinfo).
+
+# Web dashboard (FastAPI stack)
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.27,<1.0
+jinja2>=3.1,<4.0
+python-multipart>=0.0.9
+pydantic>=2.6,<3.0
+
+# Async networking (data feeds, news, broker websockets)
+websockets>=12.0,<14.0
+httpx>=0.27,<1.0
+aiohttp>=3.9,<4.0
+
+# Configuration / environment
+python-dotenv>=1.0,<2.0
+
+# ---------------------------------------------------------------------------
+# Optional vendor SDKs — uncomment the ones you wire
+# ---------------------------------------------------------------------------
+# MetaTrader5>=5.0.45 ; sys_platform == "win32"
+# oandapyV20>=0.7.2
+# ccxt>=4.2
+# python-binance>=1.0.19
+# polygon-api-client>=1.13
+# alpaca-py>=0.20
+# ib_insync>=0.9.86
+
+# ---------------------------------------------------------------------------
+# Development / test (pin for CI reproducibility)
+# ---------------------------------------------------------------------------
+pytest>=8.0,<9.0
+pytest-asyncio>=0.23
+black>=24.0
+ruff>=0.3
+mypy>=1.9
