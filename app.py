@@ -779,3 +779,11 @@ if __name__ == "__main__":
 
     start_scheduler()
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+
+# Start scheduler when gunicorn imports the app
+try:
+    start_scheduler()
+    logger.info("Scheduler auto-started on import (gunicorn/production mode)")
+except Exception as e:
+    logger.error("Failed to start scheduler on import: %s", e)
+
