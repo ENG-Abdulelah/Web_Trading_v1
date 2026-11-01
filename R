@@ -1,0 +1,11 @@
+# =============================================================================
+# Web Trading Bot — Personal Trading Analyst
+# Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
+# =============================================================================
+Flask>=3.0.0
+Werkzeug>=3.0.0
+yfinance>=0.2.40
+pandas>=2.0.0
+numpy>=1.26.0
+requests>=2.31.0
+python-dateutil>=2.8.2
