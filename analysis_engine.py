@@ -830,27 +830,23 @@ class ICTDetectors:
     mid = (hi + lo) / 2
     last = float(df["close"].iloc[-1])
     atr = self._atr_at(n - 1)
-    
-    # 👇 حماية: إذا كان الـ ATR صغير جداً، لا تتداول
+
     if atr <= 1e-5:
         return []
 
     if last < mid:
         entry = last
-        # مسافة الأمان للوقف = 0.5 * ATR (وليس 0.1 فقط)
-        sl = lo - (0.5 * atr) 
+        sl = lo - (0.5 * atr)
         tp = mid + (mid - lo) * 0.5
         return [self._setup("Premium/Discount", "BUY", entry, sl, tp, n - 1,
                             confidence=0.62, reason="Discount zone")]
-    
+
     entry = last
     sl = hi + (0.5 * atr)
     tp = mid - (hi - mid) * 0.5
     return [self._setup("Premium/Discount", "SELL", entry, sl, tp, n - 1,
                         confidence=0.62, reason="Premium zone")]
 
-
-    
     # 19. Quarterly Theory -----------------------------------------------
     def quarterly_theory(self, lookback: int = 20) -> List[Dict[str, Any]]:
         out = []
@@ -965,10 +961,6 @@ def analyze_symbol(symbol: str, timeframe: str, style: str,
         "setups": valid,
     }
 
-
-
-
-
 # =============================================================================
 # LIVE PRICES
 # =============================================================================
@@ -1060,11 +1052,3 @@ def _normalize_news(raw: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "actual": item.get("actual", ""),
         })
     return out
-
-
-
-
-
-
-
-
