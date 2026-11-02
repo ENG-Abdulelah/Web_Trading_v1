@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Web Trading Analyst</title>
 
-<!-- ⚡ Early language apply (before CSS renders — no flash) -->
 <script>
 (function () {
     var lang = localStorage.getItem("lang") || "ar";
@@ -83,7 +82,6 @@
         border-radius: 12px; padding: 1rem; margin-bottom: .85rem;
         position: relative;
     }
-    /* logical border — flips automatically with dir */
     .signal.buy  { border-inline-start: 4px solid var(--emerald); }
     .signal.sell { border-inline-start: 4px solid var(--rose); }
 
@@ -143,44 +141,49 @@
 
 <!-- ============ TOP BAR ============ -->
 <div class="top-bar">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-            <span class="brand"><i class="bi bi-graph-up-arrow"></i> Web Trading Analyst</span>
-
-            {% if market.is_open %}
-                <span class="badge bg-success">
-                    <i class="bi bi-circle-fill" style="font-size:.5rem;"></i>
-                    <span data-i18n="market_open">السوق مفتوح</span>
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        
+        <!-- الجهة اليمنى: الاسم + معلومات السوق تحته -->
+        <div>
+            <!-- اسم المنصة -->
+            <div class="mb-2">
+                <span class="brand fs-5"><i class="bi bi-graph-up-arrow"></i> Web Trading Analyst</span>
+            </div>
+            
+            <!-- الشارات: السوق، الجلسة، السيولة، والعداد -->
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <!-- حالة السوق -->
+                {% if market.is_open %}
+                    <span class="badge bg-success"><i class="bi bi-circle-fill" style="font-size:.5rem;"></i> <span data-i18n="market_open">السوق مفتوح</span></span>
+                {% else %}
+                    <span class="badge bg-danger"><i class="bi bi-circle-fill" style="font-size:.5rem;"></i> <span data-i18n="market_closed">السوق مغلق</span></span>
+                {% endif %}
+                
+                <!-- الجلسة -->
+                <span class="badge bg-secondary"><i class="bi bi-clock"></i> الجلسة: {{ market.session_name }}</span>
+                
+                <!-- السيولة -->
+                <span class="badge bg-{{ market.liq_color }} {% if market.liq_color == 'warning' %}text-dark{% endif %}">
+                    <i class="bi bi-droplet-half"></i> <span data-i18n="liquidity">السيولة</span>: {{ market.liquidity }}
                 </span>
-            {% else %}
-                <span class="badge bg-danger">
-                    <i class="bi bi-circle-fill" style="font-size:.5rem;"></i>
-                    <span data-i18n="market_closed">السوق مغلق</span>
+
+                <!-- العداد التنازلي (يظهر فقط عند إغلاق السوق) -->
+                {% if not market.is_open and market.next_open_ts %}
+                <span class="badge bg-dark border border-warning text-warning">
+                    <i class="bi bi-hourglass-split"></i> يفتح خلال: <span id="countdown-timer" class="fw-bold"></span>
                 </span>
-            {% endif %}
-
-            <!-- 👈 الجلسة -->
-            <span class="badge bg-secondary">
-                <i class="bi bi-clock"></i>
-                <span data-i18n="session">الجلسة</span>:
-                <span id="session-value" data-value="{{ market.session_name }}">{{ market.session_name }}</span>
-            </span>
-
-            <!-- 👈 السيولة -->
-            <span class="badge bg-{{ market.liq_color }} {% if market.liq_color == 'warning' %}text-dark{% endif %}">
-                <i class="bi bi-droplet-half"></i>
-                <span data-i18n="liquidity">السيولة</span>:
-                <span id="liq-value" data-value="{{ market.liquidity }}">{{ market.liquidity }}</span>
-            </span>
+                {% endif %}
+            </div>
         </div>
 
-        <div class="d-flex align-items-center gap-2">
+        <!-- الجهة اليسرى: الوقت وزر اللغة -->
+        <div class="d-flex align-items-center gap-3 mt-1">
             <div class="c-dim small">{{ now }}</div>
-            <button class="btn btn-sm btn-outline-info" onclick="toggleLanguage()"
-                    style="border-radius:8px; font-size:0.75rem;">
+            <button class="btn btn-sm btn-outline-info" onclick="toggleLanguage()" style="border-radius:8px; font-size:0.75rem;">
                 <i class="bi bi-translate"></i> <span id="lang-btn-text">EN</span>
             </button>
         </div>
+        
     </div>
 </div>
 
@@ -330,60 +333,66 @@
                 </div>
             </div>
 
-            <!-- ============ COT & CPI ============ -->
+            <!-- COT & CPI Reports -->
             <div class="card-box">
-                <div class="sec-h">
-                    <i class="bi bi-file-earmark-bar-graph"></i>
-                    <span data-i18n="cot_cpi_title">تقارير COT و CPI</span>
-                </div>
-
+                <div class="sec-h"><i class="bi bi-file-earmark-bar-graph"></i> تقارير COT و CPI</div>
+                
                 <!-- CPI -->
-                <div class="mb-3">
-                    <h6 class="mb-2" style="color:var(--cyan); font-size:.85rem;">
-                        <b data-i18n="cpi_title">CPI (التضخم الأمريكي)</b>
-                    </h6>
+                <div class="mb-3 bg-dark p-3 rounded border border-secondary">
+                    <h6 class="text-info mb-2 fw-bold">CPI (التضخم الأمريكي)</h6>
                     {% if cpi_data %}
-                        <div class="d-flex justify-content-between small">
-                            <span>
-                                <span data-i18n="cpi_period">الفترة</span>:
-                                {{ cpi_data.period }}
-                            </span>
-                            <span class="c-pos fw-bold">
-                                <span data-i18n="cpi_value">القيمة</span>:
-                                {{ cpi_data.cpi_value }}
-                            </span>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="c-dim small">الفترة: {{ cpi_data.period }}</span>
+                            <span class="fs-4 fw-bold text-white">{{ cpi_data.cpi_value }}</span>
+                        </div>
+                        <div class="small p-2 rounded {% if cpi_data.cpi_value > 3.0 %}bg-danger bg-opacity-25 c-neg{% else %}bg-success bg-opacity-25 c-pos{% endif %}">
+                            {% if cpi_data.cpi_value > 3.0 %}
+                                <i class="bi bi-exclamation-triangle"></i> <b>التحليل:</b> تضخم مرتفع. ضغط على الفيدرالي لرفع الفائدة (إيجابي للدولار / سلبي للذهب).
+                            {% else %}
+                                <i class="bi bi-check-circle"></i> <b>التحليل:</b> تضخم مستقر. يسمح بسياسة نقدية مرنة (سلبي للدولار / إيجابي للذهب).
+                            {% endif %}
                         </div>
                     {% else %}
-                        <div class="c-dim small" data-i18n="no_cpi">لا تتوفر بيانات CPI حالياً.</div>
+                        <div class="c-dim small">لا تتوفر بيانات CPI حالياً.</div>
                     {% endif %}
                 </div>
 
-                <!-- COT -->
+                <!-- COT (مفلتر) -->
                 <div>
-                    <h6 class="mb-2" style="color:var(--cyan); font-size:.85rem;">
-                        <b data-i18n="cot_title">COT (تقرير المتداولين الكبار)</b>
-                    </h6>
+                    <h6 class="text-info mb-2 fw-bold">COT (مراكز المؤسسات الكبرى)</h6>
                     {% if cot_reports %}
-                        <table class="table table-dark table-sm mb-0" style="font-size:.75rem;">
-                            <thead>
-                                <tr>
-                                    <th data-i18n="cot_market">Market</th>
-                                    <th data-i18n="cot_net_long">Net Long</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for cot in cot_reports[:5] %}
-                                <tr>
-                                    <td>{{ cot.market }}</td>
-                                    <td class="{% if cot.noncomm_net and cot.noncomm_net > 0 %}c-pos{% else %}c-neg{% endif %}">
-                                        {{ '{:,.0f}'.format(cot.noncomm_net) if cot.noncomm_net else '—' }}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                        <div class="table-responsive rounded border border-secondary">
+                            <table class="table table-dark table-sm mb-0 text-center" style="font-size:.75rem;">
+                                <thead class="bg-secondary bg-opacity-25">
+                                    <tr>
+                                        <th class="text-start">الأصل</th>
+                                        <th>صافي المراكز</th>
+                                        <th>التحيز (Bias)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for cot in cot_reports %}
+                                    <tr>
+                                        <td class="text-start fw-bold text-white">
+                                            {{ cot.market.replace(' - CHICAGO BOARD OF TRADE', '').replace(' - NEW YORK MERCANTILE EXCHANGE', '').replace(' - ICE FUTURES U.S.', '') }}
+                                        </td>
+                                        <td class="{% if cot.noncomm_net and cot.noncomm_net > 0 %}c-pos{% else %}c-neg{% endif %} fw-bold">
+                                            {{ '{:,.0f}'.format(cot.noncomm_net) if cot.noncomm_net else '—' }}
+                                        </td>
+                                        <td>
+                                            {% if cot.noncomm_net and cot.noncomm_net > 0 %}
+                                                <span class="badge bg-success">صعودي ↑</span>
+                                            {% else %}
+                                                <span class="badge bg-danger">هبوطي ↓</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
                     {% else %}
-                        <div class="c-dim small" data-i18n="no_cot">لا تتوفر بيانات COT حالياً.</div>
+                        <div class="c-dim small">لا تتوفر بيانات COT حالياً.</div>
                     {% endif %}
                 </div>
             </div>
@@ -457,21 +466,18 @@
     </div>
 </div>
 
-<!-- Bootstrap JS (ضروري إذا استخدمت dropdowns/modals لاحقاً) -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
 // ============================================================
-// I18N DICTIONARY (client-side, instant toggle)
+// I18N DICTIONARY
 // ============================================================
 const i18n = {
     ar: {
-        // top bar
         market_open: "السوق مفتوح",
         market_closed: "السوق مغلق",
         session: "الجلسة",
         liquidity: "السيولة",
-        // sections
         live_prices: "الأسعار الحية",
         signals: "توصيات ICT",
         analyze_now: "تحليل الآن",
@@ -480,35 +486,21 @@ const i18n = {
         fundamental: "التحليل الأساسي",
         news: "الأخبار اللحظية",
         strategies: "أداء الاستراتيجيات",
-        // stats
         balance: "الرصيد",
         pending: "معلقة",
         risk: "مخاطرة",
         pnl: "P&L",
         win_rate: "نجاح",
-        // signal fields
         entry: "الدخول",
         sl: "وقف الخسارة",
         tp: "الهدف",
         approve: "موافقة وتنفيذ",
         reject: "رفض",
         score: "Score",
-        // cot / cpi
-        cot_cpi_title: "تقارير COT و CPI",
-        cpi_title: "CPI (التضخم الأمريكي)",
-        cot_title: "COT (تقرير المتداولين الكبار)",
-        cpi_period: "الفترة",
-        cpi_value: "القيمة",
-        no_cpi: "لا تتوفر بيانات CPI حالياً.",
-        no_cot: "لا تتوفر بيانات COT حالياً.",
-        cot_market: "السوق",
-        cot_net_long: "صافي الشراء",
-        // strategies table
         strategy: "الاستراتيجية",
         weight: "الوزن",
         no_strat: "لا توجد بيانات كافية بعد.",
         no_news: "لا توجد أخبار.",
-        // alerts
         confirm_execute: "تأكيد تنفيذ الصفقة؟",
         executed_success: "تم التنفيذ بنجاح",
         rejected_msg: "مرفوض",
@@ -540,15 +532,6 @@ const i18n = {
         approve: "Approve & Execute",
         reject: "Reject",
         score: "Score",
-        cot_cpi_title: "COT & CPI Reports",
-        cpi_title: "CPI (US Inflation)",
-        cot_title: "COT (Commitments of Traders)",
-        cpi_period: "Period",
-        cpi_value: "Value",
-        no_cpi: "No CPI data available.",
-        no_cot: "No COT reports available.",
-        cot_market: "Market",
-        cot_net_long: "Net Long",
         strategy: "Strategy",
         weight: "Weight",
         no_strat: "Not enough data yet.",
@@ -562,40 +545,14 @@ const i18n = {
     }
 };
 
-// ============================================================
-// DYNAMIC VALUE MAPS (Arabic values from Python → EN)
-// ============================================================
-const liquidityMap = {
-    "مغلقة": "Closed",
-    "قوية جداً": "Very Strong",
-    "ضعيفة": "Weak",
-    "متوسطة": "Medium"
-};
-const sessionMap = {
-    "طوكيو": "Tokyo",
-    "جلسة طوكيو": "Tokyo Session",
-    "لندن": "London",
-    "جلسة لندن": "London Session",
-    "نيويورك": "New York",
-    "جلسة نيويورك": "New York Session",
-    "سيدني": "Sydney",
-    "جلسة سيدني": "Sydney Session",
-    "لا توجد جلسة": "No Session"
-};
-
 let currentLang = localStorage.getItem("lang") || "ar";
 
-// ============================================================
-// APPLY LANGUAGE
-// ============================================================
 function applyLanguage() {
     const isRtl = currentLang === "ar";
 
-    // 1. html lang + dir
     document.documentElement.setAttribute("lang", currentLang);
     document.documentElement.setAttribute("dir", isRtl ? "rtl" : "ltr");
 
-    // 2. Swap Bootstrap CSS
     const bs = document.getElementById("bootstrap-css");
     if (bs) {
         bs.href = isRtl
@@ -603,30 +560,14 @@ function applyLanguage() {
             : "https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css";
     }
 
-    // 3. Button text
     const btnTxt = document.getElementById("lang-btn-text");
     if (btnTxt) btnTxt.innerText = isRtl ? "EN" : "AR";
 
-    // 4. Translate data-i18n elements
     document.querySelectorAll("[data-i18n]").forEach(function (el) {
         const key = el.getAttribute("data-i18n");
         const dict = i18n[currentLang] || i18n.ar;
         if (dict[key]) el.innerText = dict[key];
     });
-
-    // 5. Translate dynamic values (liquidity)
-    const liqEl = document.getElementById("liq-value");
-    if (liqEl) {
-        const raw = liqEl.getAttribute("data-value") || "";
-        liqEl.innerText = (currentLang === "en" && liquidityMap[raw]) ? liquidityMap[raw] : raw;
-    }
-
-    // 6. Translate dynamic values (session)
-    const sessEl = document.getElementById("session-value");
-    if (sessEl) {
-        const raw = sessEl.getAttribute("data-value") || "";
-        sessEl.innerText = (currentLang === "en" && sessionMap[raw]) ? sessionMap[raw] : raw;
-    }
 }
 
 function toggleLanguage() {
@@ -675,11 +616,40 @@ async function runAnalysis() {
 }
 
 // ============================================================
+// COUNTDOWN TIMER (When Market Closed)
+// ============================================================
+{% if not market.is_open and market.next_open_ts %}
+function updateCountdown() {
+    const target = new Date("{{ market.next_open_ts }}").getTime();
+    const now = new Date().getTime();
+    const diff = target - now;
+    
+    if (diff <= 0) {
+        document.getElementById("countdown-timer").innerText = "جاري الافتتاح...";
+        setTimeout(() => location.reload(), 3000);
+        return;
+    }
+    
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+    
+    let str = "";
+    if (days > 0) str += days + " ي ";
+    str += hours + " س " + minutes + " د " + seconds + " ث";
+    
+    document.getElementById("countdown-timer").innerText = str;
+}
+setInterval(updateCountdown, 1000);
+updateCountdown();
+{% endif %}
+
+// ============================================================
 // INIT
 // ============================================================
 document.addEventListener("DOMContentLoaded", applyLanguage);
 
-// auto-refresh every 30s if pending/open counts changed
 setInterval(async function () {
     try {
         const s = await api("/api/state");
