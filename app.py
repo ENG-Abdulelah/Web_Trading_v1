@@ -13,14 +13,14 @@ import math
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-
-from flask import Flask, jsonify, render_template, request
-
 from analysis_engine import (
     NewsFetcher, SYMBOL_SPECS, analyze_symbol,
+    get_live_prices, fetch_news_with_fallback,
 )
+
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+from flask import Flask, jsonify, render_template, request
 from database import Database
 from fundamentals import get_engine as get_fundamentals_engine
 from risk_manager import RiskManager, RiskConfig
