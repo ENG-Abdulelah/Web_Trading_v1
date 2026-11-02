@@ -3,256 +3,670 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Web Trading Analyst — المهندس عبد الإله صادق</title>
+<title>Web Trading Analyst</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
 <style>
     :root {
-        --bg: #0b1117; --card: #1a212b; --border: #303a46;
-        --text: #f0f6fc; --muted: #9ba7b4;
-        --accent: #2f81f7; --green: #3fb950; --red: #f85149; --gold: #d29922;
+        --bg-0: #070a10;
+        --bg-1: #0e1420;
+        --bg-2: #151d2e;
+        --bg-3: #1c2740;
+        --border: #263252;
+        --border-hi: #3a4a72;
+        --text: #e8eef7;
+        --text-dim: #8a96ad;
+        --cyan: #06d6f5;
+        --cyan-dim: #0891b2;
+        --emerald: #10b981;
+        --rose: #f43f5e;
+        --amber: #f59e0b;
+        --violet: #8b5cf6;
     }
-    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', Tahoma, sans-serif; }
+    * { box-sizing: border-box; }
+    body {
+        background: radial-gradient(ellipse at top, #0f1729 0%, #070a10 70%);
+        background-attachment: fixed;
+        color: var(--text);
+        font-family: 'Segoe UI', Tahoma, sans-serif;
+        min-height: 100vh;
+        margin: 0;
+    }
     
-    /* Navbar & Cards */
-    .navbar-custom { background: linear-gradient(90deg, #0f1720 0%, #1a2430 100%); border-bottom: 1px solid var(--border); }
-    .navbar-brand span { color: var(--accent); font-weight: 700; }
-    .card-custom { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+    /* ============ TOP BAR ============ */
+    .top-bar {
+        background: linear-gradient(90deg, var(--bg-1) 0%, var(--bg-2) 100%);
+        border-bottom: 1px solid var(--border);
+        padding: .85rem 1.25rem;
+        position: sticky; top: 0; z-index: 100;
+        backdrop-filter: blur(8px);
+    }
+    .brand {
+        font-size: 1.15rem; font-weight: 800; letter-spacing: -.5px;
+        background: linear-gradient(90deg, var(--cyan) 0%, var(--violet) 100%);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    .market-pill {
+        font-size: .8rem; padding: .4rem .9rem;
+        border-radius: 20px; font-weight: 700;
+        letter-spacing: .3px;
+    }
     
-    /* Stats */
-    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; text-align: center; }
-    .stat-card .label { color: var(--muted); font-size: .85rem; }
-    .stat-card .value { font-size: 1.5rem; font-weight: 700; margin-top: .2rem; }
+    /* ============ TICKER ============ */
+    .ticker-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: .65rem;
+        margin-bottom: 1.25rem;
+    }
+    .ticker-item {
+        background: linear-gradient(135deg, var(--bg-2) 0%, var(--bg-3) 100%);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: .65rem .85rem;
+        display: flex; flex-direction: column;
+        transition: all .2s;
+        position: relative;
+        overflow: hidden;
+    }
+    .ticker-item::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0; height: 2px;
+        background: var(--cyan);
+    }
+    .ticker-item.up::before { background: var(--emerald); }
+    .ticker-item.down::before { background: var(--rose); }
+    .ticker-symbol { font-weight: 700; font-size: .8rem; color: var(--text-dim); }
+    .ticker-price { font-size: 1.1rem; font-weight: 700; margin-top: .15rem; }
+    .ticker-change { font-size: .78rem; font-weight: 600; }
     
-    /* Colors */
-    .pnl-pos { color: var(--green) !important; }
-    .pnl-neg { color: var(--red) !important; }
-    .text-muted { color: var(--muted) !important; }
+    /* ============ CARDS ============ */
+    .card-box {
+        background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 100%);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1.1rem 1.25rem;
+        margin-bottom: 1rem;
+    }
+    .stat-box {
+        background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 100%);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: .85rem 1rem;
+        text-align: center;
+    }
+    .stat-label { color: var(--text-dim); font-size: .75rem; font-weight: 600; }
+    .stat-value { font-size: 1.35rem; font-weight: 800; margin-top: .2rem; }
     
-    /* Signal Cards */
-    .signal-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; transition: 0.2s; }
-    .signal-card:hover { border-color: var(--accent); }
-    .signal-card.buy { border-right: 5px solid var(--green); }
-    .signal-card.sell { border-right: 5px solid var(--red); }
-    .section-title { font-size: 1.2rem; font-weight: 700; margin: 0 0 1rem 0; padding-bottom: 0.5rem; border-bottom: 2px solid var(--border); }
+    /* ============ SECTION HEADERS ============ */
+    .sec-h {
+        font-size: 1rem; font-weight: 700;
+        display: flex; align-items: center; gap: .5rem;
+        padding-bottom: .6rem; margin-bottom: .9rem;
+        border-bottom: 1px solid var(--border);
+    }
+    .sec-h i {
+        color: var(--cyan); font-size: 1.1rem;
+    }
     
-    /* Bias Grid (Fixed Contrast) */
-    .bias-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
-    .bias-item { background: #212a35; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; text-align: center; }
-    .bias-symbol { font-weight: 700; font-size: 0.9rem; margin-bottom: 4px; }
-    .bias-val { font-size: 1.2rem; font-weight: 700; }
-    .bias-conf { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+    /* ============ SIGNAL CARD ============ */
+    .signal {
+        background: var(--bg-1);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1rem 1.1rem;
+        margin-bottom: .85rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .signal::before {
+        content: '';
+        position: absolute;
+        top: 0; bottom: 0; right: 0; width: 4px;
+    }
+    .signal.buy::before { background: var(--emerald); }
+    .signal.sell::before { background: var(--rose); }
     
-    /* Tables & Buttons */
-    .table-dark { --bs-table-bg: transparent; }
-    .btn-approve { background: var(--green); border: none; color: #fff; font-weight: 600; }
-    .btn-approve:hover { background: #2f9c3f; color: #fff; }
-    .btn-reject { background: transparent; border: 1px solid var(--red); color: var(--red); font-weight: 600; }
-    .btn-reject:hover { background: var(--red); color: #fff; }
+    .signal-header {
+        display: flex; justify-content: space-between;
+        align-items: center; margin-bottom: .75rem;
+        flex-wrap: wrap; gap: .5rem;
+    }
+    .signal-symbol {
+        font-size: 1.25rem; font-weight: 800;
+    }
+    .badge-dir {
+        padding: .3rem .65rem; border-radius: 6px;
+        font-weight: 700; font-size: .75rem;
+        letter-spacing: .5px;
+    }
     
-    /* Utilities */
-    .news-lock { background: rgba(248, 81, 73, 0.15); border: 1px solid var(--red); padding: 1rem; border-radius: 8px; color: var(--red); font-weight: 600; margin-bottom: 1rem; }
-    footer { background: #060a0f; border-top: 1px solid var(--border); padding: 2rem 0; text-align: center; margin-top: 3rem; }
-    .credit { color: var(--accent); font-weight: 700; font-size: 1rem; margin-bottom: 0.2rem; }
+    .price-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: .5rem;
+        margin: .75rem 0;
+    }
+    .price-cell {
+        background: var(--bg-0);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: .5rem;
+        text-align: center;
+    }
+    .price-cell .label {
+        font-size: .7rem; color: var(--text-dim);
+        font-weight: 600; text-transform: uppercase;
+    }
+    .price-cell .value {
+        font-size: .95rem; font-weight: 700; margin-top: .15rem;
+    }
+    
+    /* ============ COLORS ============ */
+    .c-pos { color: var(--emerald) !important; }
+    .c-neg { color: var(--rose) !important; }
+    .c-dim { color: var(--text-dim) !important; }
+    .c-cyan { color: var(--cyan) !important; }
+    .c-amber { color: var(--amber) !important; }
+    
+    /* ============ BUTTONS ============ */
+    .btn-approve {
+        background: var(--emerald);
+        border: none; color: #fff; font-weight: 700;
+        border-radius: 8px; padding: .55rem 1rem;
+        transition: .2s;
+    }
+    .btn-approve:hover { background: #059669; color: #fff; }
+    .btn-reject {
+        background: transparent;
+        border: 1px solid var(--rose);
+        color: var(--rose); font-weight: 700;
+        border-radius: 8px; padding: .55rem 1rem;
+        transition: .2s;
+    }
+    .btn-reject:hover { background: var(--rose); color: #fff; }
+    
+    /* ============ BIAS GRID ============ */
+    .bias-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+        gap: .5rem;
+    }
+    .bias-box {
+        background: var(--bg-0);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: .6rem;
+        text-align: center;
+    }
+    .bias-sym { font-size: .78rem; font-weight: 700; color: var(--text-dim); }
+    .bias-val { font-size: 1.05rem; font-weight: 800; margin: .2rem 0; }
+    .bias-conf { font-size: .68rem; color: var(--text-dim); }
+    
+    /* ============ NEWS ============ */
+    .news-row {
+        display: flex; justify-content: space-between;
+        align-items: center; padding: .55rem 0;
+        border-bottom: 1px dashed var(--border);
+        font-size: .82rem; gap: .5rem;
+    }
+    .news-row:last-child { border-bottom: none; }
+    .impact-dot {
+        display: inline-block;
+        width: 7px; height: 7px; border-radius: 50%;
+        margin-left: .4rem;
+    }
+    .impact-high { background: var(--rose); }
+    .impact-medium { background: var(--amber); }
+    .impact-low { background: var(--emerald); }
+    
+    /* ============ SETTINGS ============ */
+    .form-control, .form-select {
+        background: var(--bg-0) !important;
+        border: 1px solid var(--border) !important;
+        color: var(--text) !important;
+        border-radius: 8px !important;
+    }
+    .form-control:focus, .form-select:focus {
+        border-color: var(--cyan) !important;
+        box-shadow: 0 0 0 2px rgba(6, 214, 245, .2) !important;
+    }
+    .form-label { color: var(--text-dim); font-size: .8rem; font-weight: 600; margin-bottom: .3rem; }
+    .form-check-input { background-color: var(--bg-0); border-color: var(--border); }
+    .form-check-input:checked { background-color: var(--cyan); border-color: var(--cyan); }
+    
+    /* ============ TIMEFRAME CHIPS ============ */
+    .tf-chip {
+        display: inline-block;
+        padding: .35rem .75rem;
+        border-radius: 20px;
+        border: 1px solid var(--border);
+        background: var(--bg-0);
+        cursor: pointer;
+        font-size: .8rem;
+        font-weight: 700;
+        margin: 0 .25rem .3rem 0;
+        transition: .15s;
+        user-select: none;
+    }
+    .tf-chip.active {
+        background: var(--cyan);
+        color: var(--bg-0);
+        border-color: var(--cyan);
+    }
+    .tf-chip:hover { border-color: var(--cyan); }
+    
+    /* ============ DIAGNOSTICS ============ */
+    .diag-row {
+        display: flex; justify-content: space-between;
+        padding: .4rem 0; font-size: .82rem;
+        border-bottom: 1px dashed var(--border);
+    }
+    .diag-row:last-child { border-bottom: none; }
+    .diag-label { color: var(--text-dim); }
+    .diag-val { font-weight: 700; }
+    
+    /* ============ FOOTER ============ */
+    footer {
+        text-align: center; padding: 1.5rem 1rem;
+        border-top: 1px solid var(--border);
+        margin-top: 2rem;
+    }
+    footer .credit {
+        font-weight: 800; font-size: .95rem;
+        background: linear-gradient(90deg, var(--cyan) 0%, var(--violet) 100%);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    
+    /* Alert */
+    .alert-box {
+        padding: .75rem 1rem;
+        border-radius: 10px;
+        margin-bottom: 1rem;
+        font-weight: 600;
+        font-size: .9rem;
+    }
+    .alert-danger-box {
+        background: rgba(244, 63, 94, .1);
+        border: 1px solid var(--rose);
+        color: var(--rose);
+    }
+    .alert-info-box {
+        background: rgba(6, 214, 245, .08);
+        border: 1px solid var(--cyan);
+        color: var(--cyan);
+    }
 </style>
 </head>
 <body>
 
-<!-- Navbar -->
-<nav class="navbar navbar-expand-lg navbar-custom">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="/"><i class="bi bi-graph-up-arrow"></i> Web <span>Trading Analyst</span></a>
-    <div class="ms-auto d-flex align-items-center gap-2">
-      {% if market.is_open %}
-        <span class="badge bg-success fs-6 py-2 px-3 rounded-pill"><i class="bi bi-broadcast"></i> السوق مفتوح</span>
-      {% else %}
-        <span class="badge bg-danger fs-6 py-2 px-3 rounded-pill"><i class="bi bi-pause-circle"></i> السوق مغلق</span>
-      {% endif %}
+<!-- ============ TOP BAR ============ -->
+<div class="top-bar">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-3">
+            <span class="brand"><i class="bi bi-graph-up-arrow"></i> Web Trading Analyst</span>
+            {% if market.is_open %}
+                <span class="market-pill" style="background: rgba(16,185,129,.2); color: var(--emerald);">
+                    <i class="bi bi-circle-fill" style="font-size:.5rem;"></i> السوق مفتوح
+                </span>
+            {% else %}
+                <span class="market-pill" style="background: rgba(244,63,94,.2); color: var(--rose);">
+                    <i class="bi bi-circle-fill" style="font-size:.5rem;"></i> السوق مغلق
+                </span>
+            {% endif %}
+        </div>
+        <div class="c-dim small">{{ now }}</div>
     </div>
-  </div>
-</nav>
+</div>
 
-<div class="container-fluid py-4 px-3 px-md-4">
+<div class="container-fluid py-3 px-3 px-md-4">
 
-  <!-- Alerts -->
-  {% if not market.is_open %}
-  <div class="alert alert-danger mb-3">
-    <b>التداول موقوف:</b> {{ market.blocked_reason }}
-    {% if market.next_session %} — الجلسة التالية: {{ market.next_session.name_ar }} خلال {{ market.next_session.in_minutes }} دقيقة {% endif %}
-  </div>
-  {% endif %}
-
-  {% if market.news_blackout %}
-  <div class="news-lock"><i class="bi bi-newspaper"></i> حظر أخبار نشط: <b>{{ market.news_blackout.title }}</b> — لا توصيات حتى استقرار السوق.</div>
-  {% endif %}
-
-  <!-- Stats -->
-  <div class="row g-3 mb-4">
-    <div class="col-6 col-md-2"><div class="stat-card"><div class="label">الرصيد</div><div class="value">${{ balance }}</div></div></div>
-    <div class="col-6 col-md-2"><div class="stat-card"><div class="label">توصيات معلقة</div><div class="value text-info">{{ pending_signals|length }}</div></div></div>
-    <div class="col-6 col-md-2"><div class="stat-card"><div class="label">مراكز مفتوحة</div><div class="value text-warning">{{ open_positions|length }}</div></div></div>
-    <div class="col-6 col-md-2"><div class="stat-card"><div class="label">مخاطرة المحفظة</div><div class="value {% if open_risk_pct > 5 %}pnl-neg{% else %}pnl-pos{% endif %}">{{ open_risk_pct }}%</div></div></div>
-    <div class="col-6 col-md-2"><div class="stat-card"><div class="label">P&L المعلق</div><div class="value {% if stats.closed_pnl >= 0 %}pnl-pos{% else %}pnl-neg{% endif %}">${{ stats.closed_pnl }}</div></div></div>
-    <div class="col-6 col-md-2"><div class="stat-card"><div class="label">نسبة النجاح</div><div class="value text-warning">{{ stats.win_rate }}%</div></div></div>
-  </div>
-
-  <!-- Fundamental Bias (Fixed) -->
-  <section class="mb-4">
-    <h4 class="section-title"><i class="bi bi-globe2"></i> التحليل الأساسي (Fundamental Bias)</h4>
-    <div class="bias-grid">
-      {% for sym, fb in fundamental_biases.items() %}
-      <div class="bias-item">
-        <div class="bias-symbol">{{ sym }}</div>
-        <div class="bias-val {% if fb.bias > 0.1 %}pnl-pos{% elif fb.bias < -0.1 %}pnl-neg{% else %}text-muted{% endif %}">
-          {{ '%+.2f'|format(fb.bias) }}
-        </div>
-        <div class="bias-conf">ثقة {{ (fb.confidence * 100)|round(0) }}%</div>
-      </div>
-      {% else %}
-      <div class="text-muted small p-3">لا توجد بيانات أساسية حالياً...</div>
-      {% endfor %}
+    <!-- ============ ALERTS ============ -->
+    {% if not market.is_open %}
+    <div class="alert-danger-box alert-box">
+        <i class="bi bi-exclamation-triangle"></i> {{ market.blocked_reason }}
     </div>
-  </section>
-
-  <!-- Pending Signals -->
-  <section class="mb-5">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h4 class="section-title mb-0"><i class="bi bi-lightbulb"></i> توصيات ICT المعلقة <span class="badge bg-info">{{ pending_signals|length }}</span></h4>
-      <button class="btn btn-sm btn-outline-info" onclick="runAnalysis()"><i class="bi bi-arrow-clockwise"></i> تحليل الآن</button>
-    </div>
-
-    {% if pending_signals %}
-      {% for s in pending_signals %}
-      <div class="signal-card {{ s.direction|lower }}">
-        <div class="d-flex justify-content-between align-items-center mb-3 border-bottom border-secondary pb-2">
-          <div>
-            <span class="fs-4 fw-bold text-white">{{ s.symbol }}</span>
-            <span class="badge {% if s.direction == 'BUY' %}bg-success{% else %}bg-danger{% endif %} ms-2">{{ s.direction }}</span>
-            <span class="badge bg-secondary ms-1">{{ s.strategy }}</span>
-            <span class="badge bg-dark ms-1 border border-secondary">{{ s.timeframe }}</span>
-          </div>
-          <div class="text-start">
-            <div class="badge bg-warning text-dark mb-1">Score: {{ '%.2f'|format(s.score) }}</div>
-            <div class="badge bg-primary">R:R 1:{{ s.risk_reward }}</div>
-          </div>
-        </div>
-
-        <div class="row g-2 text-center mb-3">
-          <div class="col-4 bg-dark rounded p-2">الدخول<br><b class="text-info">{{ s.entry }}</b></div>
-          <div class="col-4 bg-dark rounded p-2">SL<br><b class="pnl-neg">{{ s.stop_loss }}</b></div>
-          <div class="col-4 bg-dark rounded p-2">TP<br><b class="pnl-pos">{{ s.take_profit }}</b></div>
-        </div>
-
-        <div class="d-flex flex-wrap gap-2 mb-3">
-          {% set fb = fundamental_biases.get(s.symbol) %}
-          {% if fb %}
-          <span class="badge bg-secondary p-2"><i class="bi bi-globe2"></i> Bias: {{ '%+.2f'|format(fb.bias) }}</span>
-          {% endif %}
-          {% set tm = timemachine_cache.get(s.signal_uid) %}
-          {% if tm %}
-          <span class="badge bg-dark border border-secondary p-2">
-            <i class="bi bi-cpu"></i> MC (10k): <span class="{% if tm.verdict == 'STRONG' %}text-success{% elif tm.verdict == 'GOOD' %}text-info{% else %}text-warning{% endif %}">{{ tm.verdict }}</span> | WR: {{ '%.1f'|format(tm.win_rate) }}% | E: {{ '%+.2f'|format(tm.expectancy_r) }}R
-          </span>
-          {% endif %}
-        </div>
-
-        <div class="d-flex gap-2">
-          <button class="btn btn-approve flex-grow-1" onclick="approveSignal('{{ s.signal_uid }}')"><i class="bi bi-check-circle"></i> موافقة وتنفيذ</button>
-          <button class="btn btn-reject flex-grow-1" onclick="rejectSignal('{{ s.signal_uid }}')"><i class="bi bi-x-circle"></i> رفض</button>
-        </div>
-      </div>
-      {% endfor %}
-    {% else %}
-      <div class="card-custom text-center text-muted py-5">
-        <i class="bi bi-hourglass fs-1"></i>
-        <p class="mt-3 mb-0">لا توصيات معلقة حالياً. النظام يحلل السوق باستمرار...</p>
-      </div>
     {% endif %}
-  </section>
-
-  <!-- Open Positions -->
-  {% if open_positions %}
-  <section class="mb-5">
-    <h4 class="section-title"><i class="bi bi-briefcase"></i> المراكز المفتوحة</h4>
-    {% for p in open_positions %}
-    <div class="signal-card {{ p.side }}">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <div>
-          <span class="fs-5 fw-bold">{{ p.symbol }}</span>
-          <span class="badge {% if p.side == 'buy' %}bg-success{% else %}bg-danger{% endif %}">{{ p.side|upper }}</span>
-          <span class="badge bg-secondary">{{ p.strategy }}</span>
-        </div>
-        <code>{{ p.ticket_id }}</code>
-      </div>
-      <div class="row g-2 text-center text-muted small">
-        <div class="col-3">الدخول <br><b class="text-white">{{ p.entry_price }}</b></div>
-        <div class="col-3">SL <br><b class="pnl-neg">{{ p.current_sl }}</b></div>
-        <div class="col-3">TP <br><b class="pnl-pos">{{ p.current_tp }}</b></div>
-        <div class="col-3">اللوت <br><b class="text-white">{{ p.lot_size }}</b></div>
-      </div>
-      <div class="text-start mt-2 small text-muted">
-        <i class="bi bi-clock"></i> فُتح: {{ p.open_time[0:10] }} {{ p.open_time[11:16] }}
-      </div>
+    {% if market.news_blackout %}
+    <div class="alert-danger-box alert-box">
+        <i class="bi bi-newspaper"></i> حظر أخبار: {{ market.news_blackout.title }}
     </div>
-    {% endfor %}
-  </section>
-  {% endif %}
+    {% endif %}
 
-  <!-- Settings -->
-  <section class="mb-5">
-    <h4 class="section-title"><i class="bi bi-gear"></i> الإعدادات</h4>
-    <div class="card-custom">
-      <div class="row g-3">
-        <div class="col-6 col-md-3"><label class="form-label small text-muted">رأس المال ($)</label><input type="number" class="form-control" id="set-capital" value="{{ settings.capital }}" step="0.01"></div>
-        <div class="col-6 col-md-3"><label class="form-label small text-muted">المخاطرة / صفقة (%)</label><input type="number" class="form-control" id="set-risk" value="{{ settings.risk_per_trade_pct }}" step="0.1" max="2.0"></div>
-        <div class="col-6 col-md-3"><label class="form-label small text-muted">أدنى Score</label><input type="number" class="form-control" id="set-score" value="{{ settings.min_score }}" step="0.01"></div>
-        <div class="col-6 col-md-3"><label class="form-label small text-muted">فاصل التحليل (ث)</label><input type="number" class="form-control" id="set-interval" value="{{ settings.analysis_interval_sec }}" step="10" min="30"></div>
-        <div class="col-12 mt-3 text-start">
-          <button class="btn btn-primary" onclick="saveSettings()"><i class="bi bi-save"></i> حفظ الإعدادات</button>
-        </div>
-      </div>
+    <!-- ============ LIVE PRICES ============ -->
+    <div class="sec-h"><i class="bi bi-activity"></i> الأسعار الحية</div>
+    <div class="ticker-grid">
+        {% for sym in symbols %}
+            {% set p = live_prices.get(sym) %}
+            {% if p %}
+            <div class="ticker-item {% if p.change_pct > 0 %}up{% elif p.change_pct < 0 %}down{% endif %}">
+                <div class="ticker-symbol">{{ sym }}</div>
+                <div class="ticker-price">{{ p.price }}</div>
+                <div class="ticker-change {% if p.change_pct > 0 %}c-pos{% elif p.change_pct < 0 %}c-neg{% else %}c-dim{% endif %}">
+                    {% if p.change_pct > 0 %}▲{% elif p.change_pct < 0 %}▼{% else %}—{% endif %}
+                    {{ '%+.2f'|format(p.change_pct) }}%
+                </div>
+            </div>
+            {% else %}
+            <div class="ticker-item">
+                <div class="ticker-symbol">{{ sym }}</div>
+                <div class="ticker-price c-dim">—</div>
+                <div class="ticker-change c-dim">لا بيانات</div>
+            </div>
+            {% endif %}
+        {% endfor %}
     </div>
-  </section>
 
+    <!-- ============ STATS ============ -->
+    <div class="row g-2 mb-3">
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">الرصيد</div><div class="stat-value">${{ balance }}</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">توصيات معلقة</div><div class="stat-value c-cyan">{{ pending_signals|length }}</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">مراكز مفتوحة</div><div class="stat-value c-amber">{{ open_positions|length }}</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">مخاطرة</div><div class="stat-value {% if open_risk_pct > 5 %}c-neg{% else %}c-pos{% endif %}">{{ open_risk_pct }}%</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">P&L</div><div class="stat-value {% if stats.closed_pnl >= 0 %}c-pos{% else %}c-neg{% endif %}">${{ stats.closed_pnl }}</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">نجاح</div><div class="stat-value c-amber">{{ stats.win_rate }}%</div></div></div>
+    </div>
+
+    <div class="row g-3">
+        <!-- ============ LEFT: SIGNALS ============ -->
+        <div class="col-lg-7">
+            <div class="card-box">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="sec-h mb-0" style="border: none; padding: 0;">
+                        <i class="bi bi-lightbulb"></i> توصيات ICT 
+                        <span class="badge" style="background:var(--cyan); color:var(--bg-0);">{{ pending_signals|length }}</span>
+                    </div>
+                    <button class="btn btn-sm btn-outline-info" onclick="runAnalysis()" style="border-radius:8px;">
+                        <i class="bi bi-arrow-clockwise"></i> تحليل الآن
+                    </button>
+                </div>
+
+                {% if pending_signals %}
+                    {% for s in pending_signals %}
+                    <div class="signal {{ s.direction|lower }}">
+                        <div class="signal-header">
+                            <div>
+                                <span class="signal-symbol">{{ s.symbol }}</span>
+                                <span class="badge-dir {% if s.direction == 'BUY' %}c-pos{% else %}c-neg{% endif %}" 
+                                      style="background: {% if s.direction == 'BUY' %}rgba(16,185,129,.15){% else %}rgba(244,63,94,.15){% endif %};">
+                                    {{ s.direction }}
+                                </span>
+                                <span class="badge-dir c-cyan" style="background:rgba(6,214,245,.12);">{{ s.strategy }}</span>
+                                <span class="badge-dir c-dim" style="background:var(--bg-0);">{{ s.timeframe }} · {{ s.style }}</span>
+                            </div>
+                            <div class="text-end">
+                                <div class="badge-dir c-amber" style="background:rgba(245,158,11,.15);">Score {{ '%.2f'|format(s.score) }}</div>
+                            </div>
+                        </div>
+
+                        <div class="price-row">
+                            <div class="price-cell">
+                                <div class="label">الدخول</div>
+                                <div class="value c-cyan">{{ s.entry }}</div>
+                            </div>
+                            <div class="price-cell">
+                                <div class="label">وقف الخسارة</div>
+                                <div class="value c-neg">{{ s.stop_loss }}</div>
+                            </div>
+                            <div class="price-cell">
+                                <div class="label">الهدف</div>
+                                <div class="value c-pos">{{ s.take_profit }}</div>
+                            </div>
+                        </div>
+
+                        <div class="mb-2 small c-dim">
+                            <i class="bi bi-shield-check"></i> R:R 1:{{ s.risk_reward }} 
+                            &nbsp; | &nbsp; 
+                            <i class="bi bi-award"></i> الثقة {{ (s.confidence * 100)|round(0) }}%
+                            {% set tm = timemachine_cache.get(s.signal_uid) %}
+                            {% if tm %}
+                                &nbsp; | &nbsp; <i class="bi bi-cpu"></i> Monte Carlo: 
+                                <b class="{% if tm.verdict in ('STRONG','GOOD') %}c-pos{% else %}c-amber{% endif %}">{{ tm.verdict }}</b>
+                                (WR {{ '%.0f'|format(tm.win_rate) }}%)
+                            {% endif %}
+                        </div>
+
+                        <div class="d-flex gap-2 mt-2">
+                            <button class="btn-approve flex-grow-1" onclick="approveSignal('{{ s.signal_uid }}')">
+                                <i class="bi bi-check-circle"></i> موافقة وتنفيذ
+                            </button>
+                            <button class="btn-reject flex-grow-1" onclick="rejectSignal('{{ s.signal_uid }}')">
+                                <i class="bi bi-x-circle"></i> رفض
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center c-dim py-4">
+                        <i class="bi bi-hourglass-split" style="font-size: 2.5rem; opacity: .4;"></i>
+                        <p class="mt-2 mb-0 small">
+                            لا توصيات حالياً — راجع لوحة التشخيص لمعرفة السبب بالضبط
+                        </p>
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- ============ OPEN POSITIONS ============ -->
+            {% if open_positions %}
+            <div class="card-box">
+                <div class="sec-h"><i class="bi bi-briefcase"></i> المراكز المفتوحة</div>
+                {% for p in open_positions %}
+                <div class="signal {{ p.side }}" style="margin-bottom:.5rem;">
+                    <div class="signal-header">
+                        <div>
+                            <span class="signal-symbol">{{ p.symbol }}</span>
+                            <span class="badge-dir {% if p.side == 'buy' %}c-pos{% else %}c-neg{% endif %}"
+                                  style="background: {% if p.side == 'buy' %}rgba(16,185,129,.15){% else %}rgba(244,63,94,.15){% endif %};">
+                                {{ p.side|upper }}
+                            </span>
+                        </div>
+                        <code class="c-dim small">{{ p.ticket_id }}</code>
+                    </div>
+                    <div class="price-row">
+                        <div class="price-cell"><div class="label">الدخول</div><div class="value c-cyan">{{ p.entry_price }}</div></div>
+                        <div class="price-cell"><div class="label">SL</div><div class="value c-neg">{{ p.current_sl }}</div></div>
+                        <div class="price-cell"><div class="label">TP</div><div class="value c-pos">{{ p.current_tp }}</div></div>
+                    </div>
+                    <div class="small c-dim">
+                        <i class="bi bi-box"></i> لوت {{ p.lot_size }} · 
+                        <i class="bi bi-clock"></i> {{ p.open_time[:16] }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- ============ RIGHT: SIDEBAR ============ -->
+        <div class="col-lg-5">
+            <!-- Diagnostics -->
+            <div class="card-box">
+                <div class="sec-h"><i class="bi bi-speedometer2"></i> لوحة التشخيص</div>
+                {% set lc = settings.last_cycle_stats or {} %}
+                {% if lc %}
+                <div class="diag-row"><span class="diag-label">آخر تحليل</span><span class="diag-val c-dim small">{{ (lc.started_at or '')[:16] }}</span></div>
+                <div class="diag-row"><span class="diag-label">إشارات خام اكتشفت</span><span class="diag-val c-cyan">{{ lc.raw_setups or 0 }}</span></div>
+                <div class="diag-row"><span class="diag-label">تم توليدها</span><span class="diag-val c-pos">{{ lc.generated or 0 }}</span></div>
+                <div class="diag-row"><span class="diag-label">Score منخفض</span><span class="diag-val c-amber">{{ lc.rejections.low_score or 0 }}</span></div>
+                <div class="diag-row"><span class="diag-label">تعارض التحليل الأساسي</span><span class="diag-val c-amber">{{ lc.rejections.fundamental_misalignment or 0 }}</span></div>
+                <div class="diag-row"><span class="diag-label">رفض إدارة المخاطر</span><span class="diag-val c-amber">{{ lc.rejections.risk_gate or 0 }}</span></div>
+                <div class="diag-row"><span class="diag-label">رفض Monte Carlo</span><span class="diag-val c-amber">{{ lc.rejections.timemachine_weak or 0 }}</span></div>
+                {% if lc.blocked_reason %}
+                <div class="diag-row"><span class="diag-label">محظور</span><span class="diag-val c-neg small">{{ lc.blocked_reason }}</span></div>
+                {% endif %}
+                {% else %}
+                <div class="c-dim small">لم تُنفَّذ دورة تحليل بعد. اضغط "تحليل الآن".</div>
+                {% endif %}
+            </div>
+
+            <!-- Fundamental Bias -->
+            <div class="card-box">
+                <div class="sec-h"><i class="bi bi-globe2"></i> التحليل الأساسي</div>
+                <div class="bias-grid">
+                    {% for sym, fb in fundamental_biases.items() %}
+                    <div class="bias-box">
+                        <div class="bias-sym">{{ sym }}</div>
+                        <div class="bias-val {% if fb.bias > 0.1 %}c-pos{% elif fb.bias < -0.1 %}c-neg{% else %}c-dim{% endif %}">
+                            {{ '%+.2f'|format(fb.bias) }}
+                        </div>
+                        <div class="bias-conf">{{ (fb.confidence * 100)|round(0) }}%</div>
+                    </div>
+                    {% else %}
+                    <div class="c-dim small">لا بيانات</div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- News -->
+            <div class="card-box">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="sec-h mb-0" style="border:none; padding:0;"><i class="bi bi-newspaper"></i> الأخبار الاقتصادية</div>
+                    <button class="btn btn-sm btn-outline-info" onclick="refreshNews()" style="border-radius:6px; font-size:.7rem;">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                </div>
+                {% if news %}
+                    {% for n in news[:8] %}
+                    <div class="news-row">
+                        <div>
+                            <span class="impact-dot impact-{{ n.impact }}"></span>
+                            <b>{{ n.title }}</b>
+                            <span class="c-dim small"> · {{ n.currency }}</span>
+                        </div>
+                        <span class="c-dim small">{{ n.event_time[11:16] }}</span>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="c-dim small text-center py-2">
+                        <i class="bi bi-info-circle"></i> لا أخبار محملة. اضغط زر التحديث.
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Settings -->
+            <div class="card-box">
+                <div class="sec-h"><i class="bi bi-gear"></i> الإعدادات</div>
+
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label">رأس المال ($)</label>
+                        <input type="number" class="form-control" id="set-capital" value="{{ settings.capital }}" step="0.01">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">المخاطرة (%)</label>
+                        <input type="number" class="form-control" id="set-risk" value="{{ settings.risk_per_trade_pct }}" step="0.1" max="2">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">أدنى Score</label>
+                        <input type="number" class="form-control" id="set-score" value="{{ settings.min_score }}" step="0.01">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">فاصل التحليل (ث)</label>
+                        <input type="number" class="form-control" id="set-interval" value="{{ settings.analysis_interval_sec }}" step="10">
+                    </div>
+                </div>
+
+                <label class="form-label mt-3">نوع الصفقة</label>
+                <select class="form-select" id="set-style">
+                    <option value="both" {% if settings.style_mode == 'both' %}selected{% endif %}>كلاهما (Swing + Scalping)</option>
+                    <option value="swing" {% if settings.style_mode == 'swing' %}selected{% endif %}>Swing فقط</option>
+                    <option value="scalping" {% if settings.style_mode == 'scalping' %}selected{% endif %}>Scalping فقط</option>
+                </select>
+
+                <label class="form-label mt-3">الفريمات الزمنية</label>
+                <div id="tf-chips">
+                    {% for tf in ['1W','1D','4H','1H','15M','5M'] %}
+                    <span class="tf-chip {% if tf in settings.timeframes %}active{% endif %}" data-tf="{{ tf }}">{{ tf }}</span>
+                    {% endfor %}
+                </div>
+
+                <label class="form-label mt-3">توليد تلقائي</label>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="set-auto" {% if settings.auto_generate_signals %}checked{% endif %}>
+                    <label class="form-check-label small c-dim">تفعيل التحليل التلقائي</label>
+                </div>
+
+                <button class="btn btn-approve w-100 mt-3" onclick="saveSettings()">
+                    <i class="bi bi-save"></i> حفظ الإعدادات
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <footer>
-  <p class="credit"><i class="bi bi-code-slash"></i> Developed &amp; Engineered by Engineer Abdulelah Sadiq</p>
-  <p class="text-muted small mb-0">المهندس عبد الإله صادق</p>
+    <div class="credit"><i class="bi bi-code-slash"></i> Engineer Abdulelah Sadiq</div>
+    <div class="c-dim small mt-1">المهندس عبد الإله صادق</div>
 </footer>
 
 <script>
 async function api(url, method = 'GET', body = null) {
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
     if (body) opts.body = JSON.stringify(body);
-    const r = await fetch(url, opts); return r.json();
+    const r = await fetch(url, opts);
+    return r.json();
 }
+
 async function approveSignal(uid) {
-    if (!confirm('تأكيد تنفيذ هذه الصفقة؟')) return;
+    if (!confirm('تأكيد تنفيذ الصفقة؟')) return;
     const res = await api('/api/approve/' + uid, 'POST');
-    if (res.ok) { alert('تم التنفيذ: ' + res.ticket); location.reload(); }
-    else { alert('مرفوض: ' + (res.error || 'خطأ')); }
+    if (res.ok) { alert('تم: ' + res.ticket); location.reload(); }
+    else { alert('مرفوض: ' + (res.error || '')); }
 }
+
 async function rejectSignal(uid) {
-    await api('/api/reject/' + uid, 'POST'); location.reload();
+    await api('/api/reject/' + uid, 'POST');
+    location.reload();
 }
+
 async function runAnalysis() {
-    const btn = event.target.closest('button'); btn.disabled = true; btn.innerHTML = 'جاري التحليل...';
+    const btn = event.target.closest('button');
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
     const res = await api('/api/run-analysis', 'POST');
-    alert(`تم: ${res.generated} توصية، ${res.rejected} مرفوضة`); location.reload();
+    alert(`تم التحليل\nتوليد: ${res.generated}\nمرفوض: ${res.rejected}\nإشارات خام: ${res.raw_setups || 0}`);
+    location.reload();
 }
+
+async function refreshNews() {
+    const res = await api('/api/news/refresh', 'POST');
+    if (res.ok) { alert(`تم تحميل ${res.count} خبر`); location.reload(); }
+    else { alert('فشل تحميل الأخبار'); }
+}
+
+document.querySelectorAll('.tf-chip').forEach(chip => {
+    chip.addEventListener('click', () => chip.classList.toggle('active'));
+});
+
 async function saveSettings() {
+    const tfs = Array.from(document.querySelectorAll('.tf-chip.active')).map(c => c.dataset.tf);
     const data = {
         capital: parseFloat(document.getElementById('set-capital').value),
         risk_per_trade_pct: parseFloat(document.getElementById('set-risk').value),
         min_score: parseFloat(document.getElementById('set-score').value),
-        analysis_interval_sec: parseInt(document.getElementById('set-interval').value)
+        analysis_interval_sec: parseInt(document.getElementById('set-interval').value),
+        style_mode: document.getElementById('set-style').value,
+        auto_generate_signals: document.getElementById('set-auto').checked,
+        timeframes: tfs,
     };
-    await api('/api/settings', 'POST', data); location.reload();
+    const res = await api('/api/settings', 'POST', data);
+    if (res.ok) { alert('تم الحفظ'); location.reload(); }
+    else { alert('فشل'); }
 }
+
+// auto refresh
 setInterval(async () => {
-    const state = await api('/api/state');
-    if (state.pending.length !== {{ pending_signals|length }} || state.open.length !== {{ open_positions|length }}) location.reload();
+    try {
+        const s = await api('/api/state');
+        if (s.pending.length !== {{ pending_signals|length }} ||
+            s.open.length !== {{ open_positions|length }}) {
+            location.reload();
+        }
+    } catch (e) {}
 }, 30000);
 </script>
 </body>
