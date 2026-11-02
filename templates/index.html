@@ -135,11 +135,44 @@
         color: var(--text); text-decoration: none; transition: .15s;
     }
     .news-link:hover { color: var(--cyan); }
+
+    .form-control, .form-select {
+        background: var(--bg-0) !important;
+        border: 1px solid var(--border) !important;
+        color: var(--text) !important;
+        border-radius: 8px !important;
+    }
+    .form-control:focus, .form-select:focus {
+        border-color: var(--cyan) !important;
+        box-shadow: 0 0 0 2px rgba(6, 214, 245, .2) !important;
+    }
+    .form-label { color: var(--text-dim); font-size: .8rem; font-weight: 600; margin-bottom: .3rem; }
+    .form-check-input { background-color: var(--bg-0); border-color: var(--border); }
+    .form-check-input:checked { background-color: var(--cyan); border-color: var(--cyan); }
+
+    .tf-chip {
+        display: inline-block;
+        padding: .35rem .75rem;
+        border-radius: 20px;
+        border: 1px solid var(--border);
+        background: var(--bg-0);
+        cursor: pointer;
+        font-size: .8rem;
+        font-weight: 700;
+        margin: 0 .25rem .3rem 0;
+        transition: .15s;
+        user-select: none;
+    }
+    .tf-chip.active {
+        background: var(--cyan);
+        color: var(--bg-0);
+        border-color: var(--cyan);
+    }
+    .tf-chip:hover { border-color: var(--cyan); }
 </style>
 </head>
 <body>
 
-<!-- ============ TOP BAR ============ -->
 <div class="top-bar">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
         
@@ -181,7 +214,6 @@
 
 <div class="container-fluid py-3 px-3 px-md-4">
 
-    <!-- ============ LIVE PRICES ============ -->
     <div class="sec-h"><i class="bi bi-activity"></i> <span data-i18n="live_prices">الأسعار الحية</span></div>
     <div class="ticker-grid">
         {% for sym in symbols %}
@@ -205,7 +237,6 @@
         {% endfor %}
     </div>
 
-    <!-- ============ STATS ============ -->
     <div class="row g-2 mb-3">
         <div class="col-6 col-md-2"><div class="stat-box"><div class="c-dim small fw-bold" data-i18n="balance">الرصيد</div><div class="fs-5 fw-bold">${{ balance }}</div></div></div>
         <div class="col-6 col-md-2"><div class="stat-box"><div class="c-dim small fw-bold" data-i18n="pending">معلقة</div><div class="fs-5 fw-bold c-cyan">{{ pending_signals|length }}</div></div></div>
@@ -216,7 +247,6 @@
     </div>
 
     <div class="row g-3">
-        <!-- ============ LEFT: SIGNALS ============ -->
         <div class="col-lg-7">
             <div class="card-box">
                 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -300,7 +330,6 @@
                 {% endif %}
             </div>
 
-            <!-- ============ OPEN POSITIONS ============ -->
             {% if open_positions %}
             <div class="card-box">
                 <div class="sec-h">
@@ -328,9 +357,7 @@
             {% endif %}
         </div>
 
-        <!-- ============ RIGHT: SIDEBAR ============ -->
         <div class="col-lg-5">
-            <!-- Fundamental Bias -->
             <div class="card-box">
                 <div class="sec-h">
                     <i class="bi bi-globe2"></i>
@@ -351,11 +378,9 @@
                 </div>
             </div>
 
-            <!-- COT & CPI Reports -->
             <div class="card-box">
                 <div class="sec-h"><i class="bi bi-file-earmark-bar-graph"></i> تقارير COT و CPI</div>
                 
-                <!-- CPI -->
                 <div class="mb-3 bg-dark p-3 rounded border border-secondary">
                     <h6 class="text-info mb-2 fw-bold">CPI (التضخم الأمريكي)</h6>
                     {% if cpi_data %}
@@ -375,7 +400,6 @@
                     {% endif %}
                 </div>
 
-                <!-- COT (مفلتر) -->
                 <div>
                     <h6 class="text-info mb-2 fw-bold">COT (مراكز المؤسسات الكبرى)</h6>
                     {% if cot_reports %}
@@ -415,7 +439,6 @@
                 </div>
             </div>
 
-            <!-- ============ NEWS ============ -->
             <div class="card-box">
                 <div class="sec-h">
                     <i class="bi bi-newspaper"></i>
@@ -441,44 +464,86 @@
 
             <!-- Strategy Performance -->
             <div class="card-box">
-                <div class="sec-h">
-                    <i class="bi bi-trophy"></i>
-                    <span data-i18n="strategies">أداء الاستراتيجيات</span>
-                </div>
+                <div class="sec-h"><i class="bi bi-trophy"></i> <span data-i18n="strategies">أداء الاستراتيجيات (التعلم الذاتي)</span></div>
                 <div class="table-responsive">
-                    <table class="table table-dark table-sm mb-0" style="font-size:.8rem;">
+                    <table class="table table-dark table-sm mb-0" style="font-size: 0.75rem;">
                         <thead>
-                            <tr>
-                                <th data-i18n="strategy">الاستراتيجية</th>
-                                <th class="text-center" data-i18n="weight">الوزن</th>
-                                <th class="text-center">W/L</th>
-                                <th class="text-end" data-i18n="win_rate">نجاح</th>
+                            <tr style="border-bottom: 1px solid var(--border);">
+                                <th class="c-dim border-0" data-i18n="strat_name">الاستراتيجية</th>
+                                <th class="c-dim border-0 text-center" data-i18n="strat_weight">الوزن</th>
+                                <th class="c-dim border-0 text-center" data-i18n="strat_wl">W/L</th>
+                                <th class="c-dim border-0 text-end" data-i18n="strat_winrate">النجاح</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for s in strategy_stats %}
-                            <tr>
-                                <td>{{ s.strategy }}</td>
-                                <td class="text-center">
-                                    <span class="badge" style="background:var(--bg-0); border:1px solid var(--border);">
-                                        {{ '%.2f'|format(s.weight) }}
-                                    </span>
+                            <tr style="border-bottom: 1px dashed var(--border);">
+                                <td class="border-0 text-white fw-bold">{{ s.strategy }}</td>
+                                <td class="border-0 text-center">
+                                    <div class="d-flex align-items-center justify-content-center gap-1">
+                                        <div class="progress-custom" style="width: 40px; background: #21262d; height: 4px; border-radius: 2px;">
+                                            <div class="bar" style="width: {{ (s.weight / 1.5 * 100)|round(0) }}%; height: 100%; background: var(--cyan); border-radius: 2px;"></div>
+                                        </div>
+                                        <span class="c-dim">{{ '%.2f'|format(s.weight) }}</span>
+                                    </div>
                                 </td>
-                                <td class="text-center c-dim">{{ s.wins }}/{{ s.losses }}</td>
-                                <td class="text-end {% if s.win_rate >= 50 %}c-pos{% else %}c-neg{% endif %} fw-bold">
+                                <td class="border-0 text-center c-dim">{{ s.wins }}/{{ s.losses }}</td>
+                                <td class="border-0 text-end {% if s.win_rate >= 50 %}c-pos{% elif s.win_rate > 0 %}c-neg{% else %}c-dim{% endif %} fw-bold">
                                     {{ '%.1f'|format(s.win_rate) }}%
-                                </td>
-                            </tr>
-                            {% else %}
-                            <tr>
-                                <td colspan="4" class="text-center c-dim py-3" data-i18n="no_strat">
-                                    لا توجد بيانات كافية بعد.
                                 </td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
+            </div>
+
+            <!-- Settings -->
+            <div class="card-box">
+                <div class="sec-h"><i class="bi bi-gear"></i> <span data-i18n="settings">الإعدادات</span></div>
+
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label" data-i18n="capital">رأس المال ($)</label>
+                        <input type="number" class="form-control" id="set-capital" value="{{ settings.capital }}" step="0.01">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label" data-i18n="risk">المخاطرة (%)</label>
+                        <input type="number" class="form-control" id="set-risk" value="{{ settings.risk_per_trade_pct }}" step="0.1" max="2">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label" data-i18n="min_score">أدنى Score</label>
+                        <input type="number" class="form-control" id="set-score" value="{{ settings.min_score }}" step="0.01">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label" data-i18n="interval">فاصل التحليل (ث)</label>
+                        <input type="number" class="form-control" id="set-interval" value="{{ settings.analysis_interval_sec }}" step="10">
+                    </div>
+                </div>
+
+                <label class="form-label mt-3" data-i18n="style">نوع الصفقة</label>
+                <select class="form-select" id="set-style">
+                    <option value="both" {% if settings.style_mode == 'both' %}selected{% endif %}>Both (Swing + Scalping)</option>
+                    <option value="swing" {% if settings.style_mode == 'swing' %}selected{% endif %}>Swing</option>
+                    <option value="scalping" {% if settings.style_mode == 'scalping' %}selected{% endif %}>Scalping</option>
+                </select>
+
+                <label class="form-label mt-3" data-i18n="timeframes">الفريمات الزمنية</label>
+                <div id="tf-chips">
+                    {% for tf in ['1H','4H','15M','5M','1M'] %}
+                    <span class="tf-chip {% if tf in settings.timeframes %}active{% endif %}" data-tf="{{ tf }}">{{ tf }}</span>
+                    {% endfor %}
+                </div>
+
+                <label class="form-label mt-3" data-i18n="auto_gen">توليد تلقائي</label>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="set-auto" {% if settings.auto_generate_signals %}checked{% endif %}>
+                    <label class="form-check-label small c-dim" data-i18n="auto_analysis">تفعيل التحليل التلقائي</label>
+                </div>
+
+                <button class="btn btn-approve w-100 mt-3" onclick="saveSettings()">
+                    <i class="bi bi-save"></i> <span data-i18n="save">حفظ الإعدادات</span>
+                </button>
             </div>
         </div>
     </div>
@@ -487,9 +552,6 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-// ============================================================
-// I18N DICTIONARY
-// ============================================================
 const i18n = {
     ar: {
         market_open: "السوق مفتوح",
@@ -503,7 +565,11 @@ const i18n = {
         open_pos: "المراكز المفتوحة",
         fundamental: "التحليل الأساسي",
         news: "الأخبار اللحظية",
-        strategies: "أداء الاستراتيجيات",
+        strategies: "أداء الاستراتيجيات (التعلم الذاتي)",
+        strat_name: "الاستراتيجية",
+        strat_weight: "الوزن",
+        strat_wl: "W/L",
+        strat_winrate: "النجاح",
         balance: "الرصيد",
         pending: "معلقة",
         risk: "مخاطرة",
@@ -524,7 +590,16 @@ const i18n = {
         rejected_msg: "مرفوض",
         analysis_done: "تم التحليل",
         generated: "تم توليدها",
-        rejected: "مرفوضة"
+        rejected: "مرفوضة",
+        settings: "الإعدادات",
+        capital: "رأس المال ($)",
+        min_score: "أدنى Score",
+        interval: "فاصل التحليل (ث)",
+        style: "نوع الصفقة",
+        timeframes: "الفريمات الزمنية",
+        auto_gen: "توليد تلقائي",
+        auto_analysis: "تفعيل التحليل التلقائي",
+        save: "حفظ الإعدادات"
     },
     en: {
         market_open: "Market Open",
@@ -539,6 +614,10 @@ const i18n = {
         fundamental: "Fundamental Bias",
         news: "Live News",
         strategies: "Strategy Performance",
+        strat_name: "Strategy",
+        strat_weight: "Weight",
+        strat_wl: "W/L",
+        strat_winrate: "Win Rate",
         balance: "Balance",
         pending: "Pending",
         risk: "Risk",
@@ -559,7 +638,16 @@ const i18n = {
         rejected_msg: "Rejected",
         analysis_done: "Analysis complete",
         generated: "Generated",
-        rejected: "Rejected"
+        rejected: "Rejected",
+        settings: "Settings",
+        capital: "Capital ($)",
+        min_score: "Min Score",
+        interval: "Interval (s)",
+        style: "Style",
+        timeframes: "Timeframes",
+        auto_gen: "Auto-generate",
+        auto_analysis: "Enable auto analysis",
+        save: "Save Settings"
     }
 };
 
@@ -594,9 +682,6 @@ function toggleLanguage() {
     applyLanguage();
 }
 
-// ============================================================
-// API ACTIONS
-// ============================================================
 async function api(url, method, body) {
     method = method || "GET";
     const opts = { method: method, headers: { "Content-Type": "application/json" } };
@@ -633,9 +718,6 @@ async function runAnalysis() {
     location.reload();
 }
 
-// ============================================================
-// COUNTDOWN TIMER (When Market Closed)
-// ============================================================
 {% if not market.is_open and market.next_open_ts %}
 function updateCountdown() {
     const target = new Date("{{ market.next_open_ts }}").getTime();
@@ -663,9 +745,6 @@ setInterval(updateCountdown, 1000);
 updateCountdown();
 {% endif %}
 
-// ==========================================
-// COUNTDOWN TIMER (Inside Empty State)
-// ==========================================
 {% if not market.is_open and market.next_open_ts %}
 function updateEmptyCountdown() {
     const target = new Date("{{ market.next_open_ts }}").getTime();
@@ -696,9 +775,45 @@ setInterval(updateEmptyCountdown, 1000);
 updateEmptyCountdown();
 {% endif %}
 
-// ============================================================
-// INIT
-// ============================================================
+function updateTimeframeChips() {
+    const style = document.getElementById('set-style').value;
+    const swingTfs = ['1H', '4H'];
+    const scalpTfs = ['1M', '5M', '15M'];
+    document.querySelectorAll('.tf-chip').forEach(chip => {
+        const tf = chip.dataset.tf;
+        let show = (style === 'swing' && swingTfs.includes(tf)) || 
+                   (style === 'scalping' && scalpTfs.includes(tf)) || 
+                   (style === 'both' && [...swingTfs, ...scalpTfs].includes(tf));
+        chip.style.display = show ? 'inline-block' : 'none';
+        if (!show) chip.classList.remove('active');
+    });
+}
+document.getElementById('set-style').addEventListener('change', updateTimeframeChips);
+document.addEventListener('DOMContentLoaded', updateTimeframeChips);
+
+document.querySelectorAll('.tf-chip').forEach(chip => {
+    chip.addEventListener('click', () => chip.classList.toggle('active'));
+});
+
+async function saveSettings() {
+    const tfs = Array.from(document.querySelectorAll('.tf-chip.active')).map(c => c.dataset.tf);
+    const data = {
+        capital: parseFloat(document.getElementById('set-capital').value),
+        risk_per_trade_pct: parseFloat(document.getElementById('set-risk').value),
+        min_score: parseFloat(document.getElementById('set-score').value),
+        analysis_interval_sec: parseInt(document.getElementById('set-interval').value),
+        style_mode: document.getElementById('set-style').value,
+        auto_generate_signals: document.getElementById('set-auto').checked,
+        timeframes: tfs,
+    };
+    const res = await fetch('/api/settings', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+    }).then(r => r.json());
+    
+    if (res.ok) { alert('تم الحفظ'); location.reload(); }
+    else { alert('فشل'); }
+}
+
 document.addEventListener("DOMContentLoaded", applyLanguage);
 
 setInterval(async function () {
