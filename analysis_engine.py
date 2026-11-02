@@ -977,47 +977,63 @@ def analyze_symbol(symbol: str, timeframe: str, style: str,
 
 
 # =============================================================================
-# LIVE PRICES
+# LIVE PRICES (Yahoo + Stooq Fallback)
 # =============================================================================
 def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
-    """Fetch current price + daily change using direct Yahoo API (bypasses yfinance block)."""
     prices: Dict[str, Dict[str, Any]] = {}
     
-    # Mapping symbols for direct Yahoo API
     yahoo_syms = {
         "XAU/USD": "GC=F", "XAG/USD": "SI=F", "WTI/USD": "CL=F",
-        "EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X"
+        "EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X",
+        "DXY": "DX-Y.NYB"
+    }
+    stooq_syms = {
+        "XAU/USD": "xauusd", "XAG/USD": "xagusd", "WTI/USD": "cl.f",
+        "EUR/USD": "eurusd", "GBP/USD": "gbpusd", "USD/JPY": "usdjpy",
+        "DXY": "dx.f" # 👈 رمز الدولار في Stooq
     }
     
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
     for symbol in symbols:
+        # 1. المحاولة عبر Yahoo أولاً
         ticker = yahoo_syms.get(symbol)
-        if not ticker:
-            continue
-        try:
-            # Direct query to Yahoo Finance API
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=2d"
-            r = requests.get(url, headers=headers, timeout=10)
-            r.raise_for_status()
-            data = r.json()
-            
-            result = data.get("chart", {}).get("result", [])
-            if result and len(result) > 0:
-                meta = result[0].get("meta", {})
-                cur = meta.get("regularMarketPrice")
-                prev = meta.get("chartPreviousClose")
+        if ticker:
+            try:
+                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=2d"
+                r = requests.get(url, headers=headers, timeout=5)
+                if r.status_code == 200:
+                    data = r.json()
+                    result = data.get("chart", {}).get("result", [])
+                    if result:
+                        meta = result[0].get("meta", {})
+                        cur = meta.get("regularMarketPrice")
+                        prev = meta.get("chartPreviousClose")
+                        if cur and prev:
+                            chg = ((cur - prev) / prev * 100)
+                            prices[symbol] = {"price": round(cur, 5), "change_pct": round(chg, 2)}
+                            continue # نجح، انتقل للرمز التالي
+            except Exception:
+                pass # فشل Yahoo، جرب Stooq
+
+        # 2. المحاولة عبر Stooq (احتياطي)
+        st_ticker = stooq_syms.get(symbol)
+        if st_ticker:
+            try:
+                url = f"https://stooq.com/q/l/?s={st_ticker}&f=sd2t2ohlcv&h&e=csv"
+                r = requests.get(url, timeout=5)
+                if r.status_code == 200:
+                    lines = r.text.strip().split("\n")
+                    if len(lines) > 1:
+                        parts = lines[1].split(",")
+                        cur = float(parts[6]) # Close
+                        prev = float(parts[3]) # Open (تقريبي)
+                        if cur > 0:
+                            chg = ((cur - prev) / prev * 100) if prev else 0
+                            prices[symbol] = {"price": round(cur, 5), "change_pct": round(chg, 2)}
+            except Exception as e:
+                logger.debug("Stooq failed for %s: %s", symbol, e)
                 
-                if cur and prev:
-                    chg = ((cur - prev) / prev * 100) if prev else 0.0
-                    prices[symbol] = {
-                        "price": round(cur, 5),
-                        "change_pct": round(chg, 2),
-                        "prev_close": round(prev, 5),
-                    }
-        except Exception as e:
-            logger.debug("Direct API prices %s failed: %s", symbol, e)
-            
     return prices
 
 
