@@ -964,3 +964,107 @@ def analyze_symbol(symbol: str, timeframe: str, style: str,
         "atr": round(last_atr, 5),
         "setups": valid,
     }
+
+
+
+
+
+# =============================================================================
+# LIVE PRICES
+# =============================================================================
+def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Fetch current price + daily change % for each symbol."""
+    prices: Dict[str, Dict[str, Any]] = {}
+    for symbol in symbols:
+        ticker_sym = YF_MAP.get(symbol)
+        if not ticker_sym:
+            continue
+        ok = False
+        # Try 1: yf.Ticker
+        try:
+            t = yf.Ticker(ticker_sym)
+            df = t.history(period="2d", interval="1d", auto_adjust=False)
+            if df is not None and len(df) >= 2:
+                cur = float(df["Close"].iloc[-1])
+                prev = float(df["Close"].iloc[-2])
+                chg = ((cur - prev) / prev * 100) if prev else 0.0
+                prices[symbol] = {
+                    "price": round(cur, 5),
+                    "change_pct": round(chg, 2),
+                    "prev_close": round(prev, 5),
+                }
+                ok = True
+        except Exception as e:
+            logger.debug("Ticker.history %s failed: %s", symbol, e)
+
+        # Try 2: yf.download
+        if not ok:
+            try:
+                df = yf.download(ticker_sym, period="2d", interval="1d",
+                                 progress=False, auto_adjust=False)
+                if df is not None and len(df) >= 2:
+                    cur = float(df["Close"].iloc[-1])
+                    prev = float(df["Close"].iloc[-2])
+                    chg = ((cur - prev) / prev * 100) if prev else 0.0
+                    prices[symbol] = {
+                        "price": round(cur, 5),
+                        "change_pct": round(chg, 2),
+                        "prev_close": round(prev, 5),
+                    }
+            except Exception as e:
+                logger.debug("yf.download %s failed: %s", symbol, e)
+    return prices
+
+
+# =============================================================================
+# FALLBACK NEWS FETCHER (with CORS proxies)
+# =============================================================================
+def fetch_news_with_fallback() -> List[Dict[str, Any]]:
+    """Fetch ForexFactory news trying multiple sources."""
+    urls = [
+        "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+        "https://api.allorigins.win/raw?url=https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+        "https://corsproxy.io/?https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+    ]
+    for url in urls:
+        try:
+            r = requests.get(url, timeout=12,
+                             headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, list) and len(data) > 0:
+                    return _normalize_news(data)
+        except Exception as e:
+            logger.debug("News from %s failed: %s", url, e)
+    return []
+
+
+def _normalize_news(raw: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out = []
+    for item in raw:
+        try:
+            dt = pd.to_datetime(item.get("date"), utc=True).to_pydatetime()
+        except Exception:
+            continue
+        impact = str(item.get("impact", "Medium")).lower()
+        if impact not in ("high", "medium", "low"):
+            impact = "medium"
+        out.append({
+            "source": "forexfactory",
+            "title": item.get("title", "—"),
+            "currency": item.get("country", ""),
+            "impact": impact,
+            "event_time": dt.isoformat(),
+            "forecast": item.get("forecast", ""),
+            "previous": item.get("previous", ""),
+            "actual": item.get("actual", ""),
+        })
+    return out
+
+
+
+
+
+
+
+
