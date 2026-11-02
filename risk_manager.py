@@ -22,13 +22,12 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-
-  @dataclass
+@dataclass
 class RiskConfig:
     risk_per_trade_pct: float = 1.5
     max_risk_per_trade_pct: float = 2.0
     min_rr: float = 1.5
-    max_rr: float = 6.0              # 👈 جديد: رفض أي R:R أكبر من 1:6
+    max_rr: float = 6.0              # 👈 رفض أي R:R أكبر من 1:6
     min_sl_pips: float = 5.0
     max_sl_pips: float = 500.0 
     max_open_positions: int = 3
@@ -146,20 +145,19 @@ class RiskManager:
                 return TradeDecision(False, "tp_wrong_side", checks=checks)
 
         # 3) R:R
-       # rr = abs(tp - entry) / max(abs(entry - sl), 1e-9)
-       # checks["rr"] = round(rr, 2)
-        #if rr < self.cfg.min_rr:
+        # rr = abs(tp - entry) / max(abs(entry - sl), 1e-9)
+        # checks["rr"] = round(rr, 2)
+        # if rr < self.cfg.min_rr:
         #    return TradeDecision(False, f"rr_below_min ({rr:.2f})", checks=checks)
 
         # 3) R:R
         rr = abs(tp - entry) / max(abs(entry - sl), 1e-9)
         checks["rr"] = round(rr, 2)
-       # 👇 جديد: منع R:R الخيالي
-       if rr > self.cfg.max_rr:
-       return TradeDecision(False, f"rr_too_high ({rr:.2f} > {self.cfg.max_rr})", checks=checks)
         
+        # 👇 جديد: منع R:R الخيالي
+        if rr > self.cfg.max_rr:
+            return TradeDecision(False, f"rr_too_high ({rr:.2f} > {self.cfg.max_rr})", checks=checks)
 
-        
         # 4) Concurrency
         if len(open_positions) >= self.cfg.max_open_positions:
             return TradeDecision(False, f"max_open ({len(open_positions)})", checks=checks)
