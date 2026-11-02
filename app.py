@@ -603,16 +603,18 @@ def index():
     state = market_snapshot()
     pending = DB.get_pending_signals()
     open_pos = DB.get_open_positions()
-    closed = DB.get_closed_trades(limit=50)
+    closed = DB.get_closed_trades(limit=30)
     stats = DB.get_stats()
     strategy_stats = DB.get_filter_stats()
-    news = DB.get_recent_news(hours=24)
+    news = DB.get_recent_news(hours=48)
 
     fundamental_biases = DB.get_all_fundamental_bias()
     timemachine_cache = {
         s["signal_uid"]: DB.get_timemachine(s["signal_uid"])
         for s in pending
     }
+    # Live prices
+    live_prices = get_live_prices(SYMBOLS)
 
     balance = get_balance()
     open_risk_pct = RISK._portfolio_risk_pct(open_pos, balance)
@@ -630,10 +632,13 @@ def index():
         news=news,
         fundamental_biases=fundamental_biases,
         timemachine_cache=timemachine_cache,
+        live_prices=live_prices,
         settings=USER_SETTINGS,
         symbols=SYMBOLS,
         now=utcnow().strftime("%Y-%m-%d %H:%M UTC"),
     )
+
+
 
 
 @app.route("/api/state")
@@ -784,6 +789,58 @@ def api_timemachine(signal_uid: str):
 def api_ping():
     """Lightweight keep-alive endpoint for external cron."""
     return jsonify({"ok": True, "t": utcnow().isoformat()})
+
+
+##################################################################
+@app.route("/api/prices")
+def api_prices():
+    return jsonify(get_live_prices(SYMBOLS))
+
+
+@app.route("/api/diagnostics")
+def api_diagnostics():
+    return jsonify({
+        "settings": USER_SETTINGS,
+        "last_cycle": USER_SETTINGS.get("last_cycle_stats", {}),
+        "market": market_snapshot(),
+    })
+
+
+@app.route("/api/news/refresh", methods=["POST"])
+def api_news_refresh():
+    events = fetch_news_with_fallback()
+    if events:
+        DB.replace_news_cache(events)
+        return jsonify({"ok": True, "count": len(events)})
+    return jsonify({"ok": False, "error": "All news sources failed"})
+
+
+# تعديل /api/settings ليقبل الحقول الجديدة
+@app.route("/api/settings", methods=["GET", "POST"])
+def api_settings():
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        for key in ("capital", "risk_per_trade_pct", "min_score",
+                    "auto_generate_signals", "analysis_interval_sec",
+                    "mode", "style_mode"):
+            if key in data:
+                try:
+                    USER_SETTINGS[key] = type(USER_SETTINGS[key])(data[key])
+                except (ValueError, TypeError):
+                    pass
+        if "timeframes" in data and isinstance(data["timeframes"], list):
+            USER_SETTINGS["timeframes"] = [
+                tf for tf in data["timeframes"]
+                if tf in ("1W", "1D", "4H", "1H", "15M", "5M")
+            ]
+        _scheduler_stop.set()
+        time.sleep(1.0)
+        start_scheduler()
+        return jsonify({"ok": True, "settings": USER_SETTINGS})
+    return jsonify(USER_SETTINGS)
+
+################################################################
+
 
 
 # =============================================================================
