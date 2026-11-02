@@ -120,15 +120,16 @@ class NewsFetcher:
 
     FF_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 
-    def __init__(self, cache_ttl_sec: int = 300):
+    def __init__(self, cache_ttl_sec: int = 90):
         self._cache: List[Dict[str, Any]] = []
         self._last_fetch: float = 0.0
         self._ttl = cache_ttl_sec
 
     def fetch(self) -> List[Dict[str, Any]]:
         now = _time.time()
-        if now - self._last_fetch < self._ttl and self._cache:
+        if now - self._last_fetch < self._ttl:
             return list(self._cache)
+            
         try:
             r = requests.get(self.FF_URL, timeout=10,
                              headers={"User-Agent": "Mozilla/5.0"})
@@ -136,6 +137,7 @@ class NewsFetcher:
             raw = r.json()
         except Exception as e:
             logger.warning("ForexFactory fetch failed: %s", e)
+            self._last_fetch = now
             return list(self._cache)
 
         out: List[Dict[str, Any]] = []
@@ -979,7 +981,16 @@ def analyze_symbol(symbol: str, timeframe: str, style: str,
 # =============================================================================
 # LIVE PRICES (Yahoo + Stooq Fallback)
 # =============================================================================
+_prices_cache_data: Dict[str, Any] = {}
+_prices_cache_time: float = 0.0
+
 def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+    global _prices_cache_data, _prices_cache_time
+    now = _time.time()
+
+    if now - _prices_cache_time < 15 and _prices_cache_data:
+        return _prices_cache_data
+
     prices: Dict[str, Dict[str, Any]] = {}
     
     yahoo_syms = {
@@ -990,7 +1001,7 @@ def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
     stooq_syms = {
         "XAU/USD": "xauusd", "XAG/USD": "xagusd", "WTI/USD": "cl.f",
         "EUR/USD": "eurusd", "GBP/USD": "gbpusd", "USD/JPY": "usdjpy",
-        "DXY": "dx.f" # 👈 رمز الدولار في Stooq
+        "DXY": "dx.f"
     }
     
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -1012,9 +1023,9 @@ def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
                         if cur and prev:
                             chg = ((cur - prev) / prev * 100)
                             prices[symbol] = {"price": round(cur, 5), "change_pct": round(chg, 2)}
-                            continue # نجح، انتقل للرمز التالي
+                            continue
             except Exception:
-                pass # فشل Yahoo، جرب Stooq
+                pass
 
         # 2. المحاولة عبر Stooq (احتياطي)
         st_ticker = stooq_syms.get(symbol)
@@ -1026,14 +1037,16 @@ def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
                     lines = r.text.strip().split("\n")
                     if len(lines) > 1:
                         parts = lines[1].split(",")
-                        cur = float(parts[6]) # Close
-                        prev = float(parts[3]) # Open (تقريبي)
+                        cur = float(parts[6])
+                        prev = float(parts[3])
                         if cur > 0:
                             chg = ((cur - prev) / prev * 100) if prev else 0
                             prices[symbol] = {"price": round(cur, 5), "change_pct": round(chg, 2)}
             except Exception as e:
                 logger.debug("Stooq failed for %s: %s", symbol, e)
                 
+    _prices_cache_data = prices
+    _prices_cache_time = now
     return prices
 
 
