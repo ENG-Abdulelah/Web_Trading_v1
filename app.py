@@ -109,9 +109,6 @@ def market_snapshot() -> Dict[str, Any]:
 
 
 # =============================================================================
-# SIGNAL GENERATION
-# =============================================================================
- # =============================================================================
 # SIGNAL GENERATION (with diagnostics)
 # =============================================================================
 SWING_TFS_SET = {"1W", "1D", "4H"}
@@ -639,8 +636,6 @@ def index():
     )
 
 
-
-
 @app.route("/api/state")
 def api_state():
     update_positions()
@@ -725,25 +720,6 @@ def api_run_analysis():
     return jsonify(res)
 
 
-@app.route("/api/settings", methods=["GET", "POST"])
-def api_settings():
-    if request.method == "POST":
-        data = request.get_json(silent=True) or {}
-        for key in ("capital", "risk_per_trade_pct", "min_score",
-                    "auto_generate_signals", "analysis_interval_sec",
-                    "mode"):
-            if key in data:
-                try:
-                    USER_SETTINGS[key] = type(USER_SETTINGS[key])(data[key])
-                except (ValueError, TypeError):
-                    pass
-        _scheduler_stop.set()
-        time.sleep(1.0)
-        start_scheduler()
-        return jsonify({"ok": True, "settings": USER_SETTINGS})
-    return jsonify(USER_SETTINGS)
-
-
 @app.route("/api/market")
 def api_market():
     return jsonify(market_snapshot())
@@ -765,6 +741,7 @@ def api_fundamentals():
         return jsonify(FUNDAMENTALS.snapshot(SYMBOLS))
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
 
 @app.route("/api/timemachine/<signal_uid>")
 def api_timemachine(signal_uid: str):
@@ -791,7 +768,6 @@ def api_ping():
     return jsonify({"ok": True, "t": utcnow().isoformat()})
 
 
-##################################################################
 @app.route("/api/prices")
 def api_prices():
     return jsonify(get_live_prices(SYMBOLS))
@@ -839,9 +815,6 @@ def api_settings():
         return jsonify({"ok": True, "settings": USER_SETTINGS})
     return jsonify(USER_SETTINGS)
 
-################################################################
-
-
 
 # =============================================================================
 # BOOT
@@ -878,4 +851,3 @@ def _delayed_start_scheduler():
 
 
 threading.Thread(target=_delayed_start_scheduler, daemon=True).start()
-
