@@ -22,13 +22,15 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-@dataclass
+
+  @dataclass
 class RiskConfig:
-    risk_per_trade_pct: float = 1.5       # 1.5% per trade
-    max_risk_per_trade_pct: float = 2.0   # Hard cap
+    risk_per_trade_pct: float = 1.5
+    max_risk_per_trade_pct: float = 2.0
     min_rr: float = 1.5
+    max_rr: float = 6.0              # 👈 جديد: رفض أي R:R أكبر من 1:6
     min_sl_pips: float = 5.0
-    max_sl_pips: float = 500.0
+    max_sl_pips: float = 500.0 
     max_open_positions: int = 3
     max_positions_per_symbol: int = 1
     max_portfolio_risk_pct: float = 6.0
