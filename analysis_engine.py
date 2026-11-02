@@ -819,34 +819,47 @@ class ICTDetectors:
         return out
 
     # 18. Premium/Discount -----------------------------------------------
-       def premium_discount(self, lookback: int = 60) -> List[Dict[str, Any]]:
-    df = self.df
-    n = len(df)
-    if n < lookback:
-        return []
-    w = df.iloc[-lookback:]
-    hi = float(w["high"].max())
-    lo = float(w["low"].min())
-    mid = (hi + lo) / 2
-    last = float(df["close"].iloc[-1])
-    atr = self._atr_at(n - 1)
+    # 18. Premium/Discount ------------------------------------------------
+     def premium_discount(self, lookback: int = 60) -> List[Dict[str, Any]]:
+         df = self.df
+         n = len(df)
 
-    if atr <= 1e-5:
-        return []
+         if n < lookback:
+             return []
+ 
+          w = df.iloc[-lookback:]
+          hi = float(w["high"].max())
+          lo = float(w["low"].min())
+          mid = (hi + lo) / 2
 
-    if last < mid:
-        entry = last
-        sl = lo - (0.5 * atr)
-        tp = mid + (mid - lo) * 0.5
-        return [self._setup("Premium/Discount", "BUY", entry, sl, tp, n - 1,
-                            confidence=0.62, reason="Discount zone")]
+          last = float(df["close"].iloc[-1])
+          atr = self._atr_at(n - 1)
+  
+          if atr <= 1e-5:
+               return []
 
-    entry = last
-    sl = hi + (0.5 * atr)
-    tp = mid - (hi - mid) * 0.5
-    return [self._setup("Premium/Discount", "SELL", entry, sl, tp, n - 1,
-                        confidence=0.62, reason="Premium zone")]
+         if last < mid:
+             entry = last
+             sl = lo - (0.5 * atr)
+             tp = mid + (mid - lo) * 0.5
+          
+             return [self._setup(
+                 "Premium/Discount", "BUY",
+                 entry, sl, tp, n - 1,
+                 confidence=0.62,
+                 reason="Discount zone"
+             )]
 
+          entry = last
+          sl = hi + (0.5 * atr)
+          tp = mid - (hi - mid) * 0.5
+      
+            return [self._setup(
+                "Premium/Discount", "SELL",
+                entry, sl, tp, n - 1,
+                confidence=0.62,
+                reason="Premium zone"
+            )]
     # 19. Quarterly Theory -----------------------------------------------
     def quarterly_theory(self, lookback: int = 20) -> List[Dict[str, Any]]:
         out = []
