@@ -203,6 +203,25 @@ class Database:
                 );
             """)
 
+        # ✅ بذر الـ 20 استراتيجية بوزن افتراضي 1.0 عند التشغيل الأول
+        self._seed_strategies()
+
+    def _seed_strategies(self):
+        """تسجيل الـ 20 استراتيجية بوزن افتراضي 1.0 عند التشغيل الأول"""
+        strategies = [
+            "Order Blocks", "Fair Value Gap", "Liquidity Sweep", "Market Structure Shift",
+            "Break of Structure", "Kill Zones", "Judas Swing", "Balanced Price Range",
+            "Breaker Block", "Mitigation Block", "Silver Bullet", "Optimal Trade Entry",
+            "Inversion FVG", "Volume Gap", "Inducement", "Power of 3 (AMD)",
+            "Institutional Order Flow", "Premium/Discount", "Quarterly Theory", "Daily Bias"
+        ]
+        with self._lock, self._conn:
+            for s in strategies:
+                self._conn.execute("""
+                    INSERT OR IGNORE INTO filter_weights (strategy, weight, total_trades, wins, losses, total_r)
+                    VALUES (?, 1.0, 0, 0, 0, 0.0)
+                """, (s,))
+
     # ==================================================================
     # SIGNALS
     # ==================================================================
