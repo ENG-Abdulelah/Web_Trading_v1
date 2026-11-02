@@ -820,7 +820,7 @@ class ICTDetectors:
 
     # 18. Premium/Discount -----------------------------------------------
     # 18. Premium/Discount ------------------------------------------------
-     def premium_discount(self, lookback: int = 60) -> List[Dict[str, Any]]:
+    def premium_discount(self, lookback: int = 60) -> List[Dict[str, Any]]:
          df = self.df
          n = len(df)
 
