@@ -111,20 +111,31 @@ def market_snapshot() -> Dict[str, Any]:
 # =============================================================================
 # SIGNAL GENERATION
 # =============================================================================
+ # =============================================================================
+# SIGNAL GENERATION (with diagnostics)
+# =============================================================================
+SWING_TFS_SET = {"1W", "1D", "4H"}
+SCALPING_TFS_SET = {"1H", "15M", "5M"}
+
+
 def run_analysis_cycle() -> Dict[str, Any]:
-    """
-    Real ICT analysis on all symbols/timeframes, apply guards:
-      1. Market state
-      2. News blackout
-      3. Fundamental bias alignment
-      4. RiskManager validation
-      5. TimeMachine (Monte Carlo) gate
-    """
     started = utcnow()
-    result = {
+    stats = {
         "started_at": started.isoformat(),
-        "generated": 0, "rejected": 0,
-        "blocked_by_market": False, "errors": [],
+        "generated": 0,
+        "rejected": 0,
+        "blocked_by_market": False,
+        "blocked_reason": "",
+        "raw_setups": 0,
+        "rejections": {
+            "low_score": 0,
+            "fundamental_misalignment": 0,
+            "risk_gate": 0,
+            "timemachine_weak": 0,
+            "duplicate_symbol_dir": 0,
+            "invalid_sltp": 0,
+        },
+        "errors": [],
     }
 
     DB.expire_old_signals(max_age_minutes=90)
@@ -138,8 +149,10 @@ def run_analysis_cycle() -> Dict[str, Any]:
             "blocked_reason": state.blocked_reason,
             "news_blackout": 0,
         })
-        result["blocked_by_market"] = True
-        return result
+        stats["blocked_by_market"] = True
+        stats["blocked_reason"] = state.blocked_reason
+        USER_SETTINGS["last_cycle_stats"] = stats
+        return stats
 
     news_event = NEWS.high_impact_within(
         minutes_before=30, minutes_after=10,
@@ -152,18 +165,20 @@ def run_analysis_cycle() -> Dict[str, Any]:
             "blocked_reason": f"News blackout: {news_event['title']}",
             "news_blackout": 1,
         })
-        result["blocked_by_market"] = True
-        result["blocked_reason"] = f"News blackout: {news_event['title']}"
-        return result
+        stats["blocked_by_market"] = True
+        stats["blocked_reason"] = f"News blackout: {news_event['title']}"
+        USER_SETTINGS["last_cycle_stats"] = stats
+        return stats
 
-    # Refresh news cache
+    # Refresh news
     try:
-        events = NEWS.fetch()
-        DB.replace_news_cache(events)
+        events = fetch_news_with_fallback()
+        if events:
+            DB.replace_news_cache(events)
     except Exception as e:
         logger.warning("news cache refresh failed: %s", e)
 
-    # Fundamental Bias for all symbols
+    # Fundamental Bias
     try:
         biases = FUNDAMENTALS.bias_for_all(SYMBOLS)
         for sym, b in biases.items():
@@ -180,35 +195,37 @@ def run_analysis_cycle() -> Dict[str, Any]:
     consec = consecutive_losses()
     balance = get_balance()
 
+    # 👇 User-selected settings
+    style_mode = USER_SETTINGS.get("style_mode", "both")
+    user_tfs = USER_SETTINGS.get("timeframes", ["1D", "4H", "1H"])
+
     raw_setups: List[Dict[str, Any]] = []
 
     for symbol in SYMBOLS:
         if GUARD.is_instrument_closing(symbol):
             continue
-        for tf in SWING_TF:
-            try:
-                res = analyze_symbol(symbol, tf, "Swing", filters)
-                if res.get("ok"):
-                    for s in res["setups"]:
-                        s["score"] = round(
-                            s["confidence"] * s["risk_reward"] / 3.0, 3,
-                        )
-                        raw_setups.append(s)
-            except Exception as e:
-                result["errors"].append(f"{symbol}@{tf}: {e}")
 
-        if state.can_trade_scalping:
-            for tf in SCALPING_TF:
+        for tf in user_tfs:
+            styles_to_run = []
+            # Determine style for this TF
+            if tf in SWING_TFS_SET and style_mode in ("both", "swing"):
+                styles_to_run.append("Swing")
+            if tf in SCALPING_TFS_SET and style_mode in ("both", "scalping"):
+                if tf != "1H" or style_mode == "scalping" or state.can_trade_scalping:
+                    styles_to_run.append("Scalping")
+
+            for style in styles_to_run:
                 try:
-                    res = analyze_symbol(symbol, tf, "Scalping", filters)
+                    res = analyze_symbol(symbol, tf, style, filters)
                     if res.get("ok"):
                         for s in res["setups"]:
                             s["score"] = round(
                                 s["confidence"] * s["risk_reward"] / 3.0, 3,
                             )
                             raw_setups.append(s)
+                            stats["raw_setups"] += 1
                 except Exception as e:
-                    result["errors"].append(f"{symbol}@{tf} (scalp): {e}")
+                    stats["errors"].append(f"{symbol}@{tf}/{style}: {e}")
 
     raw_setups.sort(key=lambda s: s["score"], reverse=True)
 
@@ -216,48 +233,47 @@ def run_analysis_cycle() -> Dict[str, Any]:
     for s in raw_setups:
         key = (s["symbol"], s["direction"])
         if key in seen:
-            result["rejected"] += 1
+            stats["rejected"] += 1
+            stats["rejections"]["duplicate_symbol_dir"] += 1
             continue
+
         if s["score"] < USER_SETTINGS["min_score"]:
-            result["rejected"] += 1
+            stats["rejected"] += 1
+            stats["rejections"]["low_score"] += 1
             continue
         seen.add(key)
 
-        # ---- Fundamental alignment filter ----
+        # Fundamental alignment
         fb = biases.get(s["symbol"])
         if fb is not None and abs(fb.bias) > 0.25:
             want_dir = "BUY" if fb.bias > 0 else "SELL"
             if s["direction"] != want_dir:
-                result["rejected"] += 1
+                stats["rejected"] += 1
+                stats["rejections"]["fundamental_misalignment"] += 1
                 continue
             s["confidence"] = min(1.0, s["confidence"] + 0.05)
 
-        # ---- Risk gate ----
+        # Risk gate
         decision = RISK.validate_trade(
-            symbol=s["symbol"],
-            direction=s["direction"],
-            entry=s["entry"],
-            sl=s["stop_loss"],
-            tp=s["take_profit"],
-            balance=balance,
-            open_positions=open_pos,
+            symbol=s["symbol"], direction=s["direction"],
+            entry=s["entry"], sl=s["stop_loss"], tp=s["take_profit"],
+            balance=balance, open_positions=open_pos,
             closed_trades_today=closed_today,
             consecutive_losses=consec,
         )
         if not decision.approved:
-            result["rejected"] += 1
+            stats["rejected"] += 1
+            stats["rejections"]["risk_gate"] += 1
             s["reject_reason"] = decision.reason
             continue
 
-        # ---- TimeMachine gate ----
+        # TimeMachine gate
         tm_result = TIMEMACHINE.simulate(
             strategy=s["strategy"], runs=10_000, trades_per_run=20,
         )
         if tm_result.verdict == "WEAK":
-            result["rejected"] += 1
-            s["reject_reason"] = (
-                f"timemachine_weak ({tm_result.expectancy_r:+.2f}R)"
-            )
+            stats["rejected"] += 1
+            stats["rejections"]["timemachine_weak"] += 1
             continue
 
         s["meta"] = {
@@ -273,12 +289,13 @@ def run_analysis_cycle() -> Dict[str, Any]:
         try:
             DB.insert_signal(s)
             DB.save_timemachine(s["signal_uid"], tm_result.to_dict())
-            result["generated"] += 1
+            stats["generated"] += 1
         except Exception as e:
-            result["errors"].append(f"insert {s['symbol']}: {e}")
+            stats["errors"].append(f"insert {s['symbol']}: {e}")
 
-    result["finished_at"] = utcnow().isoformat()
-    return result
+    stats["finished_at"] = utcnow().isoformat()
+    USER_SETTINGS["last_cycle_stats"] = stats
+    return stats 
 
 
 # =============================================================================
