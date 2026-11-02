@@ -3,6 +3,7 @@
 Web Trading Bot — Personal Trading Analyst (Flask)
 Real market analysis, ICT×20, News guard, Fundamental Bias, TimeMachine,
 Risk gates, Trailing/Breakeven/Partial TP1, Weekend flatten.
++ DXY, Live RSS News, i18n (AR/EN)
 
 Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
 """
@@ -13,6 +14,10 @@ import math
 import threading
 import time
 import uuid
+
+import feedparser                       # 👈 جديد (Live News)
+import pandas as pd                     # 👈 جديد (يحتاجه fetch_live_news)
+
 from analysis_engine import (
     NewsFetcher, SYMBOL_SPECS, analyze_symbol,
     get_live_prices, fetch_news_with_fallback,
@@ -20,7 +25,10 @@ from analysis_engine import (
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from flask import Flask, jsonify, render_template, request
+from flask import (
+    Flask, jsonify, render_template, request,
+    redirect, make_response,             # 👈 جديد (i18n)
+)
 from database import Database
 from fundamentals import get_engine as get_fundamentals_engine
 from risk_manager import RiskManager, RiskConfig
@@ -49,8 +57,10 @@ RISK = RiskManager(RiskConfig())
 FUNDAMENTALS = get_fundamentals_engine()
 TIMEMACHINE = TimeMachine(DB)
 
+# 👇 DXY مضاف
 SYMBOLS = ["XAU/USD", "XAG/USD", "WTI/USD",
-           "EUR/USD", "GBP/USD", "USD/JPY"]
+           "EUR/USD", "GBP/USD", "USD/JPY", "DXY"]
+
 SWING_TF = ["1D", "4H", "1H"]
 SCALPING_TF = ["1H", "15M", "5M"]
 USER_SETTINGS: Dict[str, Any] = {
@@ -71,6 +81,126 @@ _positions_lock = threading.RLock()
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+# =============================================================================
+# LANGUAGE & I18N
+# =============================================================================
+TRANSLATIONS = {
+    "ar": {
+        "title": "محلل التداول",
+        "market_open": "السوق مفتوح",
+        "market_closed": "السوق مغلق",
+        "live_prices": "الأسعار الحية",
+        "balance": "الرصيد",
+        "pending": "توصيات معلقة",
+        "open_pos": "مراكز مفتوحة",
+        "risk": "مخاطرة",
+        "pnl": "P&L",
+        "win_rate": "نجاح",
+        "signals": "توصيات ICT",
+        "analyze_now": "تحليل الآن",
+        "no_signals": "لا توصيات حالياً — راجع لوحة التشخيص",
+        "entry": "الدخول", "sl": "وقف الخسارة", "tp": "الهدف",
+        "approve": "موافقة وتنفيذ", "reject": "رفض",
+        "diagnostics": "لوحة التشخيص",
+        "fundamental": "التحليل الأساسي",
+        "news": "الأخبار اللحظية",
+        "strategies": "أداء الاستراتيجيات",
+        "settings": "الإعدادات",
+        "save": "حفظ الإعدادات",
+        "no_news": "لا توجد أخبار حديثة.",
+        "no_strat": "لا توجد بيانات كافية بعد.",
+    },
+    "en": {
+        "title": "Trading Analyst",
+        "market_open": "Market Open",
+        "market_closed": "Market Closed",
+        "live_prices": "Live Prices",
+        "balance": "Balance",
+        "pending": "Pending",
+        "open_pos": "Open Positions",
+        "risk": "Risk",
+        "pnl": "P&L",
+        "win_rate": "Win Rate",
+        "signals": "ICT Signals",
+        "analyze_now": "Analyze Now",
+        "no_signals": "No signals currently — check diagnostics",
+        "entry": "Entry", "sl": "SL", "tp": "TP",
+        "approve": "Approve & Execute", "reject": "Reject",
+        "diagnostics": "Diagnostics",
+        "fundamental": "Fundamental Bias",
+        "news": "Live News",
+        "strategies": "Strategy Performance",
+        "settings": "Settings",
+        "save": "Save Settings",
+        "no_news": "No recent news.",
+        "no_strat": "Not enough data yet.",
+    }
+}
+
+
+def get_lang():
+    return request.args.get("lang") or request.cookies.get("lang") or "ar"
+
+
+@app.context_processor
+def inject_lang():
+    lang = get_lang()
+    return dict(
+        lang=lang,
+        t=TRANSLATIONS.get(lang, TRANSLATIONS["ar"]),
+        is_rtl=(lang == "ar"),
+    )
+
+
+@app.route("/set-lang/<l>")
+def set_lang(l):
+    if l not in ["ar", "en"]:
+        l = "ar"
+    resp = make_response(redirect(request.referrer or "/"))
+    resp.set_cookie("lang", l, max_age=30 * 24 * 60 * 60)
+    return resp
+
+
+# =============================================================================
+# LIVE NEWS (RSS)
+# =============================================================================
+def fetch_live_news():
+    """Fetch live news from ForexLive / Investing.com RSS."""
+    feeds = [
+        "https://www.forexlive.com/feed/news",
+        "https://www.investing.com/rss/news_14.rss",  # Commodities/Forex
+    ]
+    news_items = []
+    for url in feeds:
+        try:
+            feed = feedparser.parse(url)
+            for entry in feed.entries[:10]:  # Top 10 from each
+                dt = (
+                    pd.to_datetime(entry.published, utc=True).to_pydatetime()
+                    if hasattr(entry, "published") else utcnow()
+                )
+
+                title_lower = entry.title.lower()
+                is_geo = any(w in title_lower for w in
+                             ["war", "sanction", "conflict",
+                              "military", "attack", "election"])
+                impact = "high" if is_geo else "medium"
+                tag = "Geopolitical" if is_geo else "Economic"
+
+                news_items.append({
+                    "title": entry.title,
+                    "url": entry.link,
+                    "time": dt,
+                    "impact": impact,
+                    "tag": tag,
+                })
+        except Exception as e:
+            logger.warning(f"RSS fetch failed for {url}: {e}")
+
+    news_items.sort(key=lambda x: x["time"], reverse=True)
+    return news_items[:20]  # Top 20 overall
 
 
 # =============================================================================
@@ -191,14 +321,14 @@ def run_analysis_cycle() -> Dict[str, Any]:
     consec = consecutive_losses()
     balance = get_balance()
 
-    # 👇 User-selected settings
     style_mode = USER_SETTINGS.get("style_mode", "both")
-    
-    # الفريمات المسموحة للدخول
+
     valid_entry_tfs = {"1H", "4H", "15M", "5M", "1M"}
-    user_tfs = [tf for tf in USER_SETTINGS.get("timeframes", []) if tf in valid_entry_tfs]
-    
-    # فريمات الخلفية (تحلل فقط ولا تفتح صفقات)
+    user_tfs = [
+        tf for tf in USER_SETTINGS.get("timeframes", [])
+        if tf in valid_entry_tfs
+    ]
+
     background_tfs = ["1W", "1D"]
     all_tfs_to_analyze = list(set(user_tfs + background_tfs))
 
@@ -210,7 +340,7 @@ def run_analysis_cycle() -> Dict[str, Any]:
 
         for tf in all_tfs_to_analyze:
             is_background = tf in background_tfs
-            
+
             styles_to_run = []
             if tf in ("1H", "4H") and style_mode in ("both", "swing"):
                 styles_to_run.append("Swing")
@@ -222,16 +352,17 @@ def run_analysis_cycle() -> Dict[str, Any]:
                     res = analyze_symbol(symbol, tf, style, filters)
                     if res.get("ok"):
                         for s in res["setups"]:
-                            s["score"] = round(s["confidence"] * s["risk_reward"] / 3.0, 3)
-                            
-                            # 👇 إذا كان فريم كبير (1D/1W) نستخدمه للتحليل فقط ولا نضيفه كصفقة
+                            s["score"] = round(
+                                s["confidence"] * s["risk_reward"] / 3.0, 3,
+                            )
                             if is_background:
-                                continue 
-                                
+                                continue
                             raw_setups.append(s)
                             stats["raw_setups"] += 1
                 except Exception as e:
-                    stats["errors"].append(f"{symbol}@{tf}/{style}: {e}")
+                    stats["errors"].append(
+                        f"{symbol}@{tf}/{style}: {e}",
+                    )
 
     raw_setups.sort(key=lambda s: s["score"], reverse=True)
 
@@ -301,7 +432,7 @@ def run_analysis_cycle() -> Dict[str, Any]:
 
     stats["finished_at"] = utcnow().isoformat()
     USER_SETTINGS["last_cycle_stats"] = stats
-    return stats 
+    return stats
 
 
 # =============================================================================
@@ -317,7 +448,6 @@ def update_positions() -> None:
 
         fetcher = CandleFetcher()
 
-        # ---- Weekend flatten check ----
         if GUARD.should_flatten_positions():
             logger.warning(
                 "Weekend flatten triggered — closing %d positions",
@@ -331,7 +461,6 @@ def update_positions() -> None:
                                  pos.get("ticket_id"), e)
             return
 
-        # ---- Per-position management ----
         for pos in positions:
             try:
                 _manage_position(pos, fetcher)
@@ -358,7 +487,6 @@ def _manage_position(pos: Dict[str, Any], fetcher) -> None:
     else:
         current_r = (entry - price) / risk_per_unit
 
-    # Track high/low
     if side == "buy":
         pos["highest_price"] = max(
             float(pos["highest_price"] or 0.0), price,
@@ -367,26 +495,22 @@ def _manage_position(pos: Dict[str, Any], fetcher) -> None:
         lp = float(pos["lowest_price"] or 0.0)
         pos["lowest_price"] = min(lp, price) if lp > 0 else price
 
-    # Partial TP1 at +1R
     if current_r >= 1.0 and not int(pos["tp1_done"]):
         if _execute_partial_tp1(pos, price):
-            return  # fully closed
+            return
         pos["tp1_done"] = 1
         DB.save_open_position(pos)
 
-    # Breakeven at +1R
     if current_r >= 1.0 and not int(pos["breakeven_done"]):
         pos["current_sl"] = entry
         pos["breakeven_done"] = 1
         logger.info("Breakeven: %s @ %.5f", pos["ticket_id"], entry)
 
-    # Trailing activate at +1.5R
     if current_r >= 1.5 and not int(pos["trailing_active"]):
         pos["trailing_active"] = 1
         logger.info("Trailing ON: %s @ %.2fR",
                     pos["ticket_id"], current_r)
 
-    # Update trailing SL
     if int(pos["trailing_active"]):
         trail_dist = 1.0 * risk_per_unit
         if side == "buy":
@@ -398,7 +522,6 @@ def _manage_position(pos: Dict[str, Any], fetcher) -> None:
             if new_sl < float(pos["current_sl"]):
                 pos["current_sl"] = new_sl
 
-    # Check SL/TP hit
     sl = float(pos["current_sl"])
     tp = float(pos["current_tp"])
     hit = None
@@ -422,10 +545,6 @@ def _manage_position(pos: Dict[str, Any], fetcher) -> None:
 
 
 def _execute_partial_tp1(pos: Dict[str, Any], price: float) -> bool:
-    """
-    Close 50% of lot at +1R.
-    Returns True if position is fully closed (remaining lot == 0).
-    """
     total_lot = float(pos["lot_size"])
     partial_lot = round(total_lot * 0.5, 3)
     if partial_lot <= 0 or partial_lot >= total_lot:
@@ -463,9 +582,7 @@ def _execute_partial_tp1(pos: Dict[str, Any], price: float) -> bool:
 def _close_position_now(pos: Dict[str, Any], fetcher,
                          reason: str,
                          exit_price: Optional[float] = None) -> None:
-    """Close the full position; realizes PnL and clears from DB."""
     if exit_price is None:
-        # Fetch market price (fallback to current_sl if unavailable)
         if fetcher is not None:
             df = (fetcher.get(pos["symbol"], "5M")
                   or fetcher.get(pos["symbol"], "1H"))
@@ -498,7 +615,6 @@ def _close_position_now(pos: Dict[str, Any], fetcher,
     if realized_r < 0:
         pnl_usd = -pnl_usd
 
-    # Include previously-realized partial PnL
     pnl_usd += float(pos.get("partial_pnl_usd", 0.0))
 
     DB.close_trade({
@@ -536,7 +652,6 @@ def _close_position_now(pos: Dict[str, Any], fetcher,
 
 
 def _update_filter_weight(strategy: str, realized_r: float) -> None:
-    """Adaptive EMA-style weight update based on rolling performance."""
     stats = {s["strategy"]: s for s in DB.get_filter_stats()}
     s = stats.get(strategy, {
         "total_trades": 0, "wins": 0, "losses": 0, "total_r": 0.0,
@@ -612,14 +727,15 @@ def index():
     closed = DB.get_closed_trades(limit=30)
     stats = DB.get_stats()
     strategy_stats = DB.get_filter_stats()
-    news = DB.get_recent_news(hours=48)
+
+    # 👇 الأخبار الحية الجديدة (بدل DB فقط)
+    live_news = fetch_live_news()
 
     fundamental_biases = DB.get_all_fundamental_bias()
     timemachine_cache = {
         s["signal_uid"]: DB.get_timemachine(s["signal_uid"])
         for s in pending
     }
-    # Live prices
     live_prices = get_live_prices(SYMBOLS)
 
     balance = get_balance()
@@ -635,7 +751,7 @@ def index():
         balance=balance,
         open_risk_pct=round(open_risk_pct, 2),
         strategy_stats=strategy_stats,
-        news=news,
+        news=live_news,                    # 👈 Live RSS
         fundamental_biases=fundamental_biases,
         timemachine_cache=timemachine_cache,
         live_prices=live_prices,
@@ -739,6 +855,12 @@ def api_news():
     return jsonify(DB.get_recent_news(hours=48))
 
 
+@app.route("/api/news/live")
+def api_news_live():
+    """Live RSS news (used by header widget / auto-refresh)."""
+    return jsonify(fetch_live_news())
+
+
 @app.route("/api/strategies")
 def api_strategies():
     return jsonify(DB.get_filter_stats())
@@ -800,7 +922,6 @@ def api_news_refresh():
     return jsonify({"ok": False, "error": "All news sources failed"})
 
 
-# تعديل /api/settings ليقبل الحقول الجديدة
 @app.route("/api/settings", methods=["GET", "POST"])
 def api_settings():
     if request.method == "POST":
@@ -848,7 +969,6 @@ if __name__ == "__main__":
 
 
 # Start scheduler when gunicorn imports the app (production)
-# Delayed by 8s so gunicorn can boot cleanly first
 def _delayed_start_scheduler():
     import time as _t
     _t.sleep(8)
