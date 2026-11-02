@@ -1,11 +1,17 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="{{ lang }}" dir="{% if is_rtl %}rtl{% else %}ltr{% endif %}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Web Trading Analyst</title>
+<title>{{ t.title }}</title>
+
+{% if is_rtl %}
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
+{% else %}
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+{% endif %}
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+
 <style>
     :root {
         --bg-0: #070a10;
@@ -32,7 +38,7 @@
         min-height: 100vh;
         margin: 0;
     }
-    
+
     /* ============ TOP BAR ============ */
     .top-bar {
         background: linear-gradient(90deg, var(--bg-1) 0%, var(--bg-2) 100%);
@@ -52,7 +58,7 @@
         border-radius: 20px; font-weight: 700;
         letter-spacing: .3px;
     }
-    
+
     /* ============ TICKER ============ */
     .ticker-grid {
         display: grid;
@@ -81,7 +87,7 @@
     .ticker-symbol { font-weight: 700; font-size: .8rem; color: var(--text-dim); }
     .ticker-price { font-size: 1.1rem; font-weight: 700; margin-top: .15rem; }
     .ticker-change { font-size: .78rem; font-weight: 600; }
-    
+
     /* ============ CARDS ============ */
     .card-box {
         background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 100%);
@@ -99,7 +105,7 @@
     }
     .stat-label { color: var(--text-dim); font-size: .75rem; font-weight: 600; }
     .stat-value { font-size: 1.35rem; font-weight: 800; margin-top: .2rem; }
-    
+
     /* ============ SECTION HEADERS ============ */
     .sec-h {
         font-size: 1rem; font-weight: 700;
@@ -110,7 +116,7 @@
     .sec-h i {
         color: var(--cyan); font-size: 1.1rem;
     }
-    
+
     /* ============ SIGNAL CARD ============ */
     .signal {
         background: var(--bg-1);
@@ -126,9 +132,10 @@
         position: absolute;
         top: 0; bottom: 0; right: 0; width: 4px;
     }
+    [dir="ltr"] .signal::before { right: auto; left: 0; }
     .signal.buy::before { background: var(--emerald); }
     .signal.sell::before { background: var(--rose); }
-    
+
     .signal-header {
         display: flex; justify-content: space-between;
         align-items: center; margin-bottom: .75rem;
@@ -142,7 +149,7 @@
         font-weight: 700; font-size: .75rem;
         letter-spacing: .5px;
     }
-    
+
     .price-row {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
@@ -163,14 +170,14 @@
     .price-cell .value {
         font-size: .95rem; font-weight: 700; margin-top: .15rem;
     }
-    
+
     /* ============ COLORS ============ */
     .c-pos { color: var(--emerald) !important; }
     .c-neg { color: var(--rose) !important; }
     .c-dim { color: var(--text-dim) !important; }
     .c-cyan { color: var(--cyan) !important; }
     .c-amber { color: var(--amber) !important; }
-    
+
     /* ============ BUTTONS ============ */
     .btn-approve {
         background: var(--emerald);
@@ -187,24 +194,24 @@
         transition: .2s;
     }
     .btn-reject:hover { background: var(--rose); color: #fff; }
-    
-    /* ============ BIAS GRID ============ */
+
+    /* ============ BIAS GRID (7 cards incl. DXY) ============ */
     .bias-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-        gap: .5rem;
+        grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); /* 👈 صغرنا العرض لدعم 7 بطاقات */
+        gap: .4rem;
     }
     .bias-box {
         background: var(--bg-0);
         border: 1px solid var(--border);
         border-radius: 8px;
-        padding: .6rem;
+        padding: .5rem;
         text-align: center;
     }
-    .bias-sym { font-size: .78rem; font-weight: 700; color: var(--text-dim); }
-    .bias-val { font-size: 1.05rem; font-weight: 800; margin: .2rem 0; }
-    .bias-conf { font-size: .68rem; color: var(--text-dim); }
-    
+    .bias-sym { font-size: .72rem; font-weight: 700; color: var(--text-dim); }
+    .bias-val { font-size: .95rem; font-weight: 800; margin: .15rem 0; }
+    .bias-conf { font-size: .65rem; color: var(--text-dim); }
+
     /* ============ NEWS ============ */
     .news-row {
         display: flex; justify-content: space-between;
@@ -218,10 +225,11 @@
         width: 7px; height: 7px; border-radius: 50%;
         margin-left: .4rem;
     }
-    .impact-high { background: var(--rose); }
+    [dir="ltr"] .impact-dot { margin-left: 0; margin-right: .4rem; }
+    .impact-high { background: var(--rose); box-shadow: 0 0 6px var(--rose); }
     .impact-medium { background: var(--amber); }
     .impact-low { background: var(--emerald); }
-    
+
     /* ============ SETTINGS ============ */
     .form-control, .form-select {
         background: var(--bg-0) !important;
@@ -236,7 +244,7 @@
     .form-label { color: var(--text-dim); font-size: .8rem; font-weight: 600; margin-bottom: .3rem; }
     .form-check-input { background-color: var(--bg-0); border-color: var(--border); }
     .form-check-input:checked { background-color: var(--cyan); border-color: var(--cyan); }
-    
+
     /* ============ TIMEFRAME CHIPS ============ */
     .tf-chip {
         display: inline-block;
@@ -257,7 +265,7 @@
         border-color: var(--cyan);
     }
     .tf-chip:hover { border-color: var(--cyan); }
-    
+
     /* ============ DIAGNOSTICS ============ */
     .diag-row {
         display: flex; justify-content: space-between;
@@ -267,7 +275,7 @@
     .diag-row:last-child { border-bottom: none; }
     .diag-label { color: var(--text-dim); }
     .diag-val { font-weight: 700; }
-    
+
     /* ============ FOOTER ============ */
     footer {
         text-align: center; padding: 1.5rem 1rem;
@@ -280,7 +288,7 @@
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         background-clip: text;
     }
-    
+
     /* Alert */
     .alert-box {
         padding: .75rem 1rem;
@@ -299,6 +307,30 @@
         border: 1px solid var(--cyan);
         color: var(--cyan);
     }
+
+    /* ============ LANGUAGE SWITCHER ============ */
+    .lang-btn {
+        background: transparent;
+        border: 1px solid var(--border-hi);
+        color: var(--cyan);
+        border-radius: 8px;
+        font-size: .75rem;
+        font-weight: 700;
+        padding: .3rem .65rem;
+        transition: .15s;
+    }
+    .lang-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+    .dropdown-menu {
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+    }
+    .dropdown-item {
+        color: var(--text);
+        font-size: .82rem;
+        padding: .4rem .9rem;
+    }
+    .dropdown-item:hover { background: var(--bg-3); color: var(--cyan); }
 </style>
 </head>
 <body>
@@ -307,18 +339,30 @@
 <div class="top-bar">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
         <div class="d-flex align-items-center gap-3">
-            <span class="brand"><i class="bi bi-graph-up-arrow"></i> Web Trading Analyst</span>
+            <span class="brand"><i class="bi bi-graph-up-arrow"></i> {{ t.title }}</span>
             {% if market.is_open %}
                 <span class="market-pill" style="background: rgba(16,185,129,.2); color: var(--emerald);">
-                    <i class="bi bi-circle-fill" style="font-size:.5rem;"></i> السوق مفتوح
+                    <i class="bi bi-circle-fill" style="font-size:.5rem;"></i> {{ t.market_open }}
                 </span>
             {% else %}
                 <span class="market-pill" style="background: rgba(244,63,94,.2); color: var(--rose);">
-                    <i class="bi bi-circle-fill" style="font-size:.5rem;"></i> السوق مغلق
+                    <i class="bi bi-circle-fill" style="font-size:.5rem;"></i> {{ t.market_closed }}
                 </span>
             {% endif %}
         </div>
-        <div class="c-dim small">{{ now }}</div>
+
+        <div class="d-flex align-items-center gap-3">
+            <div class="c-dim small">{{ now }}</div>
+            <div class="dropdown">
+                <button class="lang-btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-translate"></i> {{ 'AR' if lang == 'en' else 'EN' }}
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end" style="min-width:110px;">
+                    <li><a class="dropdown-item" href="/set-lang/ar">العربية</a></li>
+                    <li><a class="dropdown-item" href="/set-lang/en">English</a></li>
+                </ul>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -332,12 +376,12 @@
     {% endif %}
     {% if market.news_blackout %}
     <div class="alert-danger-box alert-box">
-        <i class="bi bi-newspaper"></i> حظر أخبار: {{ market.news_blackout.title }}
+        <i class="bi bi-newspaper"></i> {{ t.news }}: {{ market.news_blackout.title }}
     </div>
     {% endif %}
 
     <!-- ============ LIVE PRICES ============ -->
-    <div class="sec-h"><i class="bi bi-activity"></i> الأسعار الحية</div>
+    <div class="sec-h"><i class="bi bi-activity"></i> {{ t.live_prices }}</div>
     <div class="ticker-grid">
         {% for sym in symbols %}
             {% set p = live_prices.get(sym) %}
@@ -354,7 +398,7 @@
             <div class="ticker-item">
                 <div class="ticker-symbol">{{ sym }}</div>
                 <div class="ticker-price c-dim">—</div>
-                <div class="ticker-change c-dim">لا بيانات</div>
+                <div class="ticker-change c-dim">—</div>
             </div>
             {% endif %}
         {% endfor %}
@@ -362,12 +406,12 @@
 
     <!-- ============ STATS ============ -->
     <div class="row g-2 mb-3">
-        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">الرصيد</div><div class="stat-value">${{ balance }}</div></div></div>
-        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">توصيات معلقة</div><div class="stat-value c-cyan">{{ pending_signals|length }}</div></div></div>
-        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">مراكز مفتوحة</div><div class="stat-value c-amber">{{ open_positions|length }}</div></div></div>
-        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">مخاطرة</div><div class="stat-value {% if open_risk_pct > 5 %}c-neg{% else %}c-pos{% endif %}">{{ open_risk_pct }}%</div></div></div>
-        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">P&L</div><div class="stat-value {% if stats.closed_pnl >= 0 %}c-pos{% else %}c-neg{% endif %}">${{ stats.closed_pnl }}</div></div></div>
-        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">نجاح</div><div class="stat-value c-amber">{{ stats.win_rate }}%</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">{{ t.balance }}</div><div class="stat-value">${{ balance }}</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">{{ t.pending }}</div><div class="stat-value c-cyan">{{ pending_signals|length }}</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">{{ t.open_pos }}</div><div class="stat-value c-amber">{{ open_positions|length }}</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">{{ t.risk }}</div><div class="stat-value {% if open_risk_pct > 5 %}c-neg{% else %}c-pos{% endif %}">{{ open_risk_pct }}%</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">{{ t.pnl }}</div><div class="stat-value {% if stats.closed_pnl >= 0 %}c-pos{% else %}c-neg{% endif %}">${{ stats.closed_pnl }}</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">{{ t.win_rate }}</div><div class="stat-value c-amber">{{ stats.win_rate }}%</div></div></div>
     </div>
 
     <div class="row g-3">
@@ -376,11 +420,11 @@
             <div class="card-box">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <div class="sec-h mb-0" style="border: none; padding: 0;">
-                        <i class="bi bi-lightbulb"></i> توصيات ICT 
+                        <i class="bi bi-lightbulb"></i> {{ t.signals }}
                         <span class="badge" style="background:var(--cyan); color:var(--bg-0);">{{ pending_signals|length }}</span>
                     </div>
                     <button class="btn btn-sm btn-outline-info" onclick="runAnalysis()" style="border-radius:8px;">
-                        <i class="bi bi-arrow-clockwise"></i> تحليل الآن
+                        <i class="bi bi-arrow-clockwise"></i> {{ t.analyze_now }}
                     </button>
                 </div>
 
@@ -404,15 +448,15 @@
 
                         <div class="price-row">
                             <div class="price-cell">
-                                <div class="label">الدخول</div>
+                                <div class="label">{{ t.entry }}</div>
                                 <div class="value c-cyan">{{ s.entry }}</div>
                             </div>
                             <div class="price-cell">
-                                <div class="label">وقف الخسارة</div>
+                                <div class="label">{{ t.sl }}</div>
                                 <div class="value c-neg">{{ s.stop_loss }}</div>
                             </div>
                             <div class="price-cell">
-                                <div class="label">الهدف</div>
+                                <div class="label">{{ t.tp }}</div>
                                 <div class="value c-pos">{{ s.take_profit }}</div>
                             </div>
                         </div>
@@ -420,7 +464,7 @@
                         <div class="mb-2 small c-dim">
                             <i class="bi bi-shield-check"></i> R:R 1:{{ s.risk_reward }} 
                             &nbsp; | &nbsp; 
-                            <i class="bi bi-award"></i> الثقة {{ (s.confidence * 100)|round(0) }}%
+                            <i class="bi bi-award"></i> {{ (s.confidence * 100)|round(0) }}%
                             {% set tm = timemachine_cache.get(s.signal_uid) %}
                             {% if tm %}
                                 &nbsp; | &nbsp; <i class="bi bi-cpu"></i> Monte Carlo: 
@@ -431,10 +475,10 @@
 
                         <div class="d-flex gap-2 mt-2">
                             <button class="btn-approve flex-grow-1" onclick="approveSignal('{{ s.signal_uid }}')">
-                                <i class="bi bi-check-circle"></i> موافقة وتنفيذ
+                                <i class="bi bi-check-circle"></i> {{ t.approve }}
                             </button>
                             <button class="btn-reject flex-grow-1" onclick="rejectSignal('{{ s.signal_uid }}')">
-                                <i class="bi bi-x-circle"></i> رفض
+                                <i class="bi bi-x-circle"></i> {{ t.reject }}
                             </button>
                         </div>
                     </div>
@@ -442,9 +486,7 @@
                 {% else %}
                     <div class="text-center c-dim py-4">
                         <i class="bi bi-hourglass-split" style="font-size: 2.5rem; opacity: .4;"></i>
-                        <p class="mt-2 mb-0 small">
-                            لا توصيات حالياً — راجع لوحة التشخيص لمعرفة السبب بالضبط
-                        </p>
+                        <p class="mt-2 mb-0 small">{{ t.no_signals }}</p>
                     </div>
                 {% endif %}
             </div>
@@ -452,7 +494,7 @@
             <!-- ============ OPEN POSITIONS ============ -->
             {% if open_positions %}
             <div class="card-box">
-                <div class="sec-h"><i class="bi bi-briefcase"></i> المراكز المفتوحة</div>
+                <div class="sec-h"><i class="bi bi-briefcase"></i> {{ t.open_pos }}</div>
                 {% for p in open_positions %}
                 <div class="signal {{ p.side }}" style="margin-bottom:.5rem;">
                     <div class="signal-header">
@@ -466,12 +508,12 @@
                         <code class="c-dim small">{{ p.ticket_id }}</code>
                     </div>
                     <div class="price-row">
-                        <div class="price-cell"><div class="label">الدخول</div><div class="value c-cyan">{{ p.entry_price }}</div></div>
-                        <div class="price-cell"><div class="label">SL</div><div class="value c-neg">{{ p.current_sl }}</div></div>
-                        <div class="price-cell"><div class="label">TP</div><div class="value c-pos">{{ p.current_tp }}</div></div>
+                        <div class="price-cell"><div class="label">{{ t.entry }}</div><div class="value c-cyan">{{ p.entry_price }}</div></div>
+                        <div class="price-cell"><div class="label">{{ t.sl }}</div><div class="value c-neg">{{ p.current_sl }}</div></div>
+                        <div class="price-cell"><div class="label">{{ t.tp }}</div><div class="value c-pos">{{ p.current_tp }}</div></div>
                     </div>
                     <div class="small c-dim">
-                        <i class="bi bi-box"></i> لوت {{ p.lot_size }} · 
+                        <i class="bi bi-box"></i> {{ p.lot_size }} · 
                         <i class="bi bi-clock"></i> {{ p.open_time[:16] }}
                     </div>
                 </div>
@@ -484,27 +526,27 @@
         <div class="col-lg-5">
             <!-- Diagnostics -->
             <div class="card-box">
-                <div class="sec-h"><i class="bi bi-speedometer2"></i> لوحة التشخيص</div>
+                <div class="sec-h"><i class="bi bi-speedometer2"></i> {{ t.diagnostics }}</div>
                 {% set lc = settings.last_cycle_stats or {} %}
                 {% if lc %}
-                <div class="diag-row"><span class="diag-label">آخر تحليل</span><span class="diag-val c-dim small">{{ (lc.started_at or '')[:16] }}</span></div>
-                <div class="diag-row"><span class="diag-label">إشارات خام اكتشفت</span><span class="diag-val c-cyan">{{ lc.raw_setups or 0 }}</span></div>
-                <div class="diag-row"><span class="diag-label">تم توليدها</span><span class="diag-val c-pos">{{ lc.generated or 0 }}</span></div>
-                <div class="diag-row"><span class="diag-label">Score منخفض</span><span class="diag-val c-amber">{{ lc.rejections.low_score or 0 }}</span></div>
-                <div class="diag-row"><span class="diag-label">تعارض التحليل الأساسي</span><span class="diag-val c-amber">{{ lc.rejections.fundamental_misalignment or 0 }}</span></div>
-                <div class="diag-row"><span class="diag-label">رفض إدارة المخاطر</span><span class="diag-val c-amber">{{ lc.rejections.risk_gate or 0 }}</span></div>
-                <div class="diag-row"><span class="diag-label">رفض Monte Carlo</span><span class="diag-val c-amber">{{ lc.rejections.timemachine_weak or 0 }}</span></div>
+                <div class="diag-row"><span class="diag-label">{{ t.analyze_now }}</span><span class="diag-val c-dim small">{{ (lc.started_at or '')[:16] }}</span></div>
+                <div class="diag-row"><span class="diag-label">Raw setups</span><span class="diag-val c-cyan">{{ lc.raw_setups or 0 }}</span></div>
+                <div class="diag-row"><span class="diag-label">Generated</span><span class="diag-val c-pos">{{ lc.generated or 0 }}</span></div>
+                <div class="diag-row"><span class="diag-label">Low score</span><span class="diag-val c-amber">{{ lc.rejections.low_score or 0 }}</span></div>
+                <div class="diag-row"><span class="diag-label">{{ t.fundamental }}</span><span class="diag-val c-amber">{{ lc.rejections.fundamental_misalignment or 0 }}</span></div>
+                <div class="diag-row"><span class="diag-label">{{ t.risk }}</span><span class="diag-val c-amber">{{ lc.rejections.risk_gate or 0 }}</span></div>
+                <div class="diag-row"><span class="diag-label">Monte Carlo</span><span class="diag-val c-amber">{{ lc.rejections.timemachine_weak or 0 }}</span></div>
                 {% if lc.blocked_reason %}
-                <div class="diag-row"><span class="diag-label">محظور</span><span class="diag-val c-neg small">{{ lc.blocked_reason }}</span></div>
+                <div class="diag-row"><span class="diag-label">Blocked</span><span class="diag-val c-neg small">{{ lc.blocked_reason }}</span></div>
                 {% endif %}
                 {% else %}
-                <div class="c-dim small">لم تُنفَّذ دورة تحليل بعد. اضغط "تحليل الآن".</div>
+                <div class="c-dim small">{{ t.analyze_now }} —</div>
                 {% endif %}
             </div>
 
-            <!-- Fundamental Bias -->
+            <!-- Fundamental Bias (7 cards including DXY) -->
             <div class="card-box">
-                <div class="sec-h"><i class="bi bi-globe2"></i> التحليل الأساسي</div>
+                <div class="sec-h"><i class="bi bi-globe2"></i> {{ t.fundamental }}</div>
                 <div class="bias-grid">
                     {% for sym, fb in fundamental_biases.items() %}
                     <div class="bias-box">
@@ -515,48 +557,54 @@
                         <div class="bias-conf">{{ (fb.confidence * 100)|round(0) }}%</div>
                     </div>
                     {% else %}
-                    <div class="c-dim small">لا بيانات</div>
+                    <div class="c-dim small">—</div>
                     {% endfor %}
                 </div>
             </div>
 
-            <!-- News -->
+            <!-- News (live RSS) -->
             <div class="card-box">
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <div class="sec-h mb-0" style="border:none; padding:0;"><i class="bi bi-newspaper"></i> الأخبار الاقتصادية</div>
+                    <div class="sec-h mb-0" style="border:none; padding:0;">
+                        <i class="bi bi-newspaper"></i> {{ t.news }}
+                    </div>
                     <button class="btn btn-sm btn-outline-info" onclick="refreshNews()" style="border-radius:6px; font-size:.7rem;">
                         <i class="bi bi-arrow-clockwise"></i>
                     </button>
                 </div>
-                {% if news %}
-                    {% for n in news[:8] %}
-                    <div class="news-row">
-                        <div>
-                            <span class="impact-dot impact-{{ n.impact }}"></span>
-                            <b>{{ n.title }}</b>
-                            <span class="c-dim small"> · {{ n.currency }}</span>
+                <div style="max-height: 320px; overflow-y: auto; padding-right: 5px;">
+                    {% if news %}
+                        {% for n in news %}
+                        <div class="news-row" style="align-items: flex-start;">
+                            <div style="flex-grow:1;">
+                                <span class="impact-dot impact-{{ n.impact }}"></span>
+                                <a href="{{ n.url }}" target="_blank" class="text-white text-decoration-none" style="font-size:0.85rem;">
+                                    {{ n.title }}
+                                </a>
+                                <div class="c-dim" style="font-size:0.7rem; margin-top:2px;">
+                                    <span class="badge bg-dark border border-secondary">{{ n.tag }}</span>
+                                    {{ n.time.strftime('%H:%M') }}
+                                </div>
+                            </div>
                         </div>
-                        <span class="c-dim small">{{ n.event_time[11:16] }}</span>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <div class="c-dim small text-center py-2">
-                        <i class="bi bi-info-circle"></i> لا أخبار محملة. اضغط زر التحديث.
-                    </div>
-                {% endif %}
+                        {% endfor %}
+                    {% else %}
+                        <div class="c-dim small text-center py-2">{{ t.no_news }}</div>
+                    {% endif %}
+                </div>
             </div>
 
             <!-- Strategy Performance -->
             <div class="card-box">
-                <div class="sec-h"><i class="bi bi-trophy"></i> أداء الاستراتيجيات (التعلم الذاتي)</div>
+                <div class="sec-h"><i class="bi bi-trophy"></i> {{ t.strategies }}</div>
                 <div class="table-responsive">
                     <table class="table table-sm text-white mb-0" style="font-size: 0.85rem;">
                         <thead>
                             <tr style="border-bottom: 1px solid var(--border);">
-                                <th class="c-dim border-0">الاستراتيجية</th>
-                                <th class="c-dim border-0 text-center">الوزن</th>
+                                <th class="c-dim border-0">{{ t.strategies }}</th>
+                                <th class="c-dim border-0 text-center">W</th>
                                 <th class="c-dim border-0 text-center">W/L</th>
-                                <th class="c-dim border-0 text-end">النجاح</th>
+                                <th class="c-dim border-0 text-end">{{ t.win_rate }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -572,7 +620,7 @@
                                 </td>
                             </tr>
                             {% else %}
-                            <tr><td colspan="4" class="text-center c-dim py-3 border-0">لا توجد بيانات كافية بعد (تحتاج صفقات مغلقة).</td></tr>
+                            <tr><td colspan="4" class="text-center c-dim py-3 border-0">{{ t.no_strat }}</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -581,49 +629,49 @@
 
             <!-- Settings -->
             <div class="card-box">
-                <div class="sec-h"><i class="bi bi-gear"></i> الإعدادات</div>
+                <div class="sec-h"><i class="bi bi-gear"></i> {{ t.settings }}</div>
 
                 <div class="row g-2">
                     <div class="col-6">
-                        <label class="form-label">رأس المال ($)</label>
+                        <label class="form-label">Capital ($)</label>
                         <input type="number" class="form-control" id="set-capital" value="{{ settings.capital }}" step="0.01">
                     </div>
                     <div class="col-6">
-                        <label class="form-label">المخاطرة (%)</label>
+                        <label class="form-label">Risk (%)</label>
                         <input type="number" class="form-control" id="set-risk" value="{{ settings.risk_per_trade_pct }}" step="0.1" max="2">
                     </div>
                     <div class="col-6">
-                        <label class="form-label">أدنى Score</label>
+                        <label class="form-label">Min Score</label>
                         <input type="number" class="form-control" id="set-score" value="{{ settings.min_score }}" step="0.01">
                     </div>
                     <div class="col-6">
-                        <label class="form-label">فاصل التحليل (ث)</label>
+                        <label class="form-label">Interval (s)</label>
                         <input type="number" class="form-control" id="set-interval" value="{{ settings.analysis_interval_sec }}" step="10">
                     </div>
                 </div>
 
-                <label class="form-label mt-3">نوع الصفقة</label>
+                <label class="form-label mt-3">Style</label>
                 <select class="form-select" id="set-style">
-                    <option value="both" {% if settings.style_mode == 'both' %}selected{% endif %}>كلاهما (Swing + Scalping)</option>
-                    <option value="swing" {% if settings.style_mode == 'swing' %}selected{% endif %}>Swing فقط</option>
-                    <option value="scalping" {% if settings.style_mode == 'scalping' %}selected{% endif %}>Scalping فقط</option>
+                    <option value="both" {% if settings.style_mode == 'both' %}selected{% endif %}>Both (Swing + Scalping)</option>
+                    <option value="swing" {% if settings.style_mode == 'swing' %}selected{% endif %}>Swing</option>
+                    <option value="scalping" {% if settings.style_mode == 'scalping' %}selected{% endif %}>Scalping</option>
                 </select>
 
-                <label class="form-label mt-3">الفريمات الزمنية للدخول</label>
+                <label class="form-label mt-3">Timeframes</label>
                 <div id="tf-chips">
                     {% for tf in ['1H','4H','15M','5M','1M'] %}
                     <span class="tf-chip {% if tf in settings.timeframes %}active{% endif %}" data-tf="{{ tf }}">{{ tf }}</span>
                     {% endfor %}
                 </div>
 
-                <label class="form-label mt-3">توليد تلقائي</label>
+                <label class="form-label mt-3">Auto-generate</label>
                 <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="set-auto" {% if settings.auto_generate_signals %}checked{% endif %}>
-                    <label class="form-check-label small c-dim">تفعيل التحليل التلقائي</label>
+                    <label class="form-check-label small c-dim">Auto analysis</label>
                 </div>
 
                 <button class="btn btn-approve w-100 mt-3" onclick="saveSettings()">
-                    <i class="bi bi-save"></i> حفظ الإعدادات
+                    <i class="bi bi-save"></i> {{ t.save }}
                 </button>
             </div>
         </div>
@@ -635,6 +683,9 @@
     <div class="c-dim small mt-1">المهندس عبد الإله صادق</div>
 </footer>
 
+<!-- Bootstrap JS (مطلوب لدروب-داون اللغة) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
 <script>
 async function api(url, method = 'GET', body = null) {
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
@@ -644,10 +695,10 @@ async function api(url, method = 'GET', body = null) {
 }
 
 async function approveSignal(uid) {
-    if (!confirm('تأكيد تنفيذ الصفقة؟')) return;
+    if (!confirm('{{ t.approve }}?')) return;
     const res = await api('/api/approve/' + uid, 'POST');
-    if (res.ok) { alert('تم: ' + res.ticket); location.reload(); }
-    else { alert('مرفوض: ' + (res.error || '')); }
+    if (res.ok) { alert('OK: ' + res.ticket); location.reload(); }
+    else { alert('Error: ' + (res.error || '')); }
 }
 
 async function rejectSignal(uid) {
@@ -661,14 +712,14 @@ async function runAnalysis() {
     btn.disabled = true;
     btn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
     const res = await api('/api/run-analysis', 'POST');
-    alert(`تم التحليل\nتوليد: ${res.generated}\nمرفوض: ${res.rejected}\nإشارات خام: ${res.raw_setups || 0}`);
+    alert(`Generated: ${res.generated}\nRejected: ${res.rejected}\nRaw: ${res.raw_setups || 0}`);
     location.reload();
 }
 
 async function refreshNews() {
     const res = await api('/api/news/refresh', 'POST');
-    if (res.ok) { alert(`تم تحميل ${res.count} خبر`); location.reload(); }
-    else { alert('فشل تحميل الأخبار'); }
+    if (res.ok) { alert(`+${res.count}`); location.reload(); }
+    else { alert('News fetch failed'); }
 }
 
 // --- Timeframe Filtering Logic ---
@@ -680,7 +731,7 @@ function updateTimeframeChips() {
     document.querySelectorAll('.tf-chip').forEach(chip => {
         const tf = chip.dataset.tf;
         let show = false;
-        
+
         if (style === 'swing' && swingTfs.includes(tf)) show = true;
         else if (style === 'scalping' && scalpTfs.includes(tf)) show = true;
         else if (style === 'both' && [...swingTfs, ...scalpTfs].includes(tf)) show = true;
@@ -689,14 +740,12 @@ function updateTimeframeChips() {
             chip.style.display = 'inline-block';
         } else {
             chip.style.display = 'none';
-            chip.classList.remove('active'); // إلغاء التحديد إذا تم إخفاؤه
+            chip.classList.remove('active');
         }
     });
 }
 
-// ربط الحدث
 document.getElementById('set-style').addEventListener('change', updateTimeframeChips);
-// تشغيله عند تحميل الصفحة لأول مرة
 document.addEventListener('DOMContentLoaded', updateTimeframeChips);
 
 document.querySelectorAll('.tf-chip').forEach(chip => {
@@ -715,8 +764,8 @@ async function saveSettings() {
         timeframes: tfs,
     };
     const res = await api('/api/settings', 'POST', data);
-    if (res.ok) { alert('تم الحفظ'); location.reload(); }
-    else { alert('فشل'); }
+    if (res.ok) { alert('{{ t.save }}'); location.reload(); }
+    else { alert('Error'); }
 }
 
 // auto refresh
