@@ -60,10 +60,9 @@ USER_SETTINGS: Dict[str, Any] = {
     "auto_generate_signals": True,
     "analysis_interval_sec": 90,
     "mode": "single",
-    # 👇 جديد
-    "style_mode": "both",                              # "swing" | "scalping" | "both"
-    "timeframes": ["1D", "4H", "1H", "15M"],            # multi-select
-    "last_cycle_stats": {},                            # populated each cycle
+    "style_mode": "both",
+    "timeframes": ["1H", "4H", "15M"],  # 👈 الفريمات المسموحة للدخول فقط
+    "last_cycle_stats": {},
 }
 
 # thread safety for position management
@@ -194,7 +193,14 @@ def run_analysis_cycle() -> Dict[str, Any]:
 
     # 👇 User-selected settings
     style_mode = USER_SETTINGS.get("style_mode", "both")
-    user_tfs = USER_SETTINGS.get("timeframes", ["1D", "4H", "1H"])
+    
+    # الفريمات المسموحة للدخول
+    valid_entry_tfs = {"1H", "4H", "15M", "5M", "1M"}
+    user_tfs = [tf for tf in USER_SETTINGS.get("timeframes", []) if tf in valid_entry_tfs]
+    
+    # فريمات الخلفية (تحلل فقط ولا تفتح صفقات)
+    background_tfs = ["1W", "1D"]
+    all_tfs_to_analyze = list(set(user_tfs + background_tfs))
 
     raw_setups: List[Dict[str, Any]] = []
 
@@ -202,23 +208,26 @@ def run_analysis_cycle() -> Dict[str, Any]:
         if GUARD.is_instrument_closing(symbol):
             continue
 
-        for tf in user_tfs:
+        for tf in all_tfs_to_analyze:
+            is_background = tf in background_tfs
+            
             styles_to_run = []
-            # Determine style for this TF
-            if tf in SWING_TFS_SET and style_mode in ("both", "swing"):
+            if tf in ("1H", "4H") and style_mode in ("both", "swing"):
                 styles_to_run.append("Swing")
-            if tf in SCALPING_TFS_SET and style_mode in ("both", "scalping"):
-                if tf != "1H" or style_mode == "scalping" or state.can_trade_scalping:
-                    styles_to_run.append("Scalping")
+            if tf in ("15M", "5M", "1M") and style_mode in ("both", "scalping"):
+                styles_to_run.append("Scalping")
 
             for style in styles_to_run:
                 try:
                     res = analyze_symbol(symbol, tf, style, filters)
                     if res.get("ok"):
                         for s in res["setups"]:
-                            s["score"] = round(
-                                s["confidence"] * s["risk_reward"] / 3.0, 3,
-                            )
+                            s["score"] = round(s["confidence"] * s["risk_reward"] / 3.0, 3)
+                            
+                            # 👇 إذا كان فريم كبير (1D/1W) نستخدمه للتحليل فقط ولا نضيفه كصفقة
+                            if is_background:
+                                continue 
+                                
                             raw_setups.append(s)
                             stats["raw_setups"] += 1
                 except Exception as e:
@@ -807,7 +816,7 @@ def api_settings():
         if "timeframes" in data and isinstance(data["timeframes"], list):
             USER_SETTINGS["timeframes"] = [
                 tf for tf in data["timeframes"]
-                if tf in ("1W", "1D", "4H", "1H", "15M", "5M")
+                if tf in ("1H", "4H", "15M", "5M", "1M")
             ]
         _scheduler_stop.set()
         time.sleep(1.0)
