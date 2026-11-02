@@ -1,9 +1,9 @@
 # app.py
 """
 Web Trading Bot — Personal Trading Analyst (Flask)
-Real market analysis, ICT×20, News guard, Fundamental Bias, TimeMachine,
+Real market analysis, ICT×20, News guard (5/10), Fundamental Bias, TimeMachine,
 Risk gates, Trailing/Breakeven/Partial TP1, Weekend flatten.
-+ DXY, Live RSS News, i18n (AR/EN), COT, CPI, Liquidity/Session snapshot.
++ DXY, Live RSS News, i18n (AR/EN), COT (filtered), CPI, Liquidity/Session snapshot.
 
 Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
 """
@@ -23,7 +23,7 @@ from analysis_engine import (
     get_live_prices, fetch_news_with_fallback,
 )
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 from flask import (
     Flask, jsonify, render_template, request,
@@ -57,9 +57,15 @@ RISK = RiskManager(RiskConfig())
 FUNDAMENTALS = get_fundamentals_engine()
 TIMEMACHINE = TimeMachine(DB)
 
-# 👇 DXY مضاف — ضروري لعمل COT/CPI وفلتر الدولار
+# 👇 DXY مضاف
 SYMBOLS = ["XAU/USD", "XAG/USD", "WTI/USD",
            "EUR/USD", "GBP/USD", "USD/JPY", "DXY"]
+
+# 👇 كلمات مفتاحية لتصفية تقارير COT (تطابق Markets في CFTC)
+COT_VALID_MARKETS = [
+    "GOLD", "SILVER", "CRUDE OIL",
+    "EURO FX", "BRITISH POUND", "JAPANESE YEN",
+]
 
 SWING_TF = ["1D", "4H", "1H"]
 SCALPING_TF = ["1H", "15M", "5M"]
@@ -71,12 +77,16 @@ USER_SETTINGS: Dict[str, Any] = {
     "analysis_interval_sec": 90,
     "mode": "single",
     "style_mode": "both",
-    "timeframes": ["1H", "4H", "15M"],  # 👈 الفريمات المسموحة للدخول فقط
+    "timeframes": ["1H", "4H", "15M"],
     "last_cycle_stats": {},
 }
 
 # thread safety for position management
 _positions_lock = threading.RLock()
+
+# 👇 نافذة حظر الأخبار (دقيقة قبل / دقيقة بعد)
+NEWS_BEFORE_MIN = 5
+NEWS_AFTER_MIN = 10
 
 
 def utcnow() -> datetime:
@@ -182,13 +192,13 @@ def fetch_live_news():
     """Fetch live news from ForexLive / Investing.com RSS."""
     feeds = [
         "https://www.forexlive.com/feed/news",
-        "https://www.investing.com/rss/news_14.rss",  # Commodities/Forex
+        "https://www.investing.com/rss/news_14.rss",
     ]
     news_items = []
     for url in feeds:
         try:
             feed = feedparser.parse(url)
-            for entry in feed.entries[:10]:  # Top 10 from each
+            for entry in feed.entries[:10]:
                 dt = (
                     pd.to_datetime(entry.published, utc=True).to_pydatetime()
                     if hasattr(entry, "published") else utcnow()
@@ -212,7 +222,7 @@ def fetch_live_news():
             logger.warning(f"RSS fetch failed for {url}: {e}")
 
     news_items.sort(key=lambda x: x["time"], reverse=True)
-    return news_items[:20]  # Top 20 overall
+    return news_items[:20]
 
 
 # =============================================================================
@@ -243,14 +253,21 @@ def today_closed() -> List[Dict[str, Any]]:
 
 def market_snapshot() -> Dict[str, Any]:
     """
-    Snapshot مركّز للسوق: حالة الفتح، الجلسة، السيولة، وأخبار الحظر.
+    Snapshot مركّز للسوق:
+      - حظر أخبار: 5 دقائق قبل / 10 بعد
+      - الجلسة النشطة
+      - مستوى السيولة (kill zone / dead / medium)
+      - وقت افتتاح الجلسة القادمة (للعداد التنازلي)
     """
     state = GUARD.state()
+
+    # 👈 5 دقائق قبل الخبر، 10 بعده
     news_blackout = NEWS.high_impact_within(
-        minutes_before=30, minutes_after=10,
+        minutes_before=NEWS_BEFORE_MIN,
+        minutes_after=NEWS_AFTER_MIN,
     )
 
-    # 👇 تحديد مستوى السيولة
+    # 👇 السيولة
     if not state.is_open:
         liquidity, liq_color = "مغلقة", "danger"
     elif state.active_kill_zones:
@@ -260,12 +277,22 @@ def market_snapshot() -> Dict[str, Any]:
     else:
         liquidity, liq_color = "متوسطة", "warning"
 
-    # 👇 اسم الجلسة النشطة (يفضّل name_ar ثم name)
+    # 👇 اسم الجلسة (يفضّل name_ar ثم name)
     if state.active_sessions:
         s0 = state.active_sessions[0]
         session_name = s0.get("name_ar") or s0.get("name") or "—"
     else:
         session_name = "لا توجد جلسة"
+
+    # 👇 وقت افتتاح السوق القادم (للعداد التنازلي)
+    next_open_ts: Optional[str] = None
+    next_session = getattr(state, "next_session", None)
+    if not state.is_open and next_session:
+        try:
+            minutes = int(next_session.get("in_minutes", 0))
+            next_open_ts = (utcnow() + timedelta(minutes=minutes)).isoformat()
+        except Exception as e:
+            logger.warning("next_open_ts calc failed: %s", e)
 
     return {
         **state.to_dict(),
@@ -273,6 +300,7 @@ def market_snapshot() -> Dict[str, Any]:
         "liquidity": liquidity,
         "liq_color": liq_color,
         "session_name": session_name,
+        "next_open_ts": next_open_ts,
     }
 
 
@@ -319,8 +347,10 @@ def run_analysis_cycle() -> Dict[str, Any]:
         USER_SETTINGS["last_cycle_stats"] = stats
         return stats
 
+    # 👈 نفس نافذة الحظر 5/10
     news_event = NEWS.high_impact_within(
-        minutes_before=30, minutes_after=10,
+        minutes_before=NEWS_BEFORE_MIN,
+        minutes_after=NEWS_AFTER_MIN,
     )
     if news_event:
         DB.save_market_snapshot({
@@ -708,23 +738,40 @@ def _update_filter_weight(strategy: str, realized_r: float) -> None:
 
 
 # =============================================================================
-# COT / CPI FETCHERS (safe wrappers)
+# COT / CPI FETCHERS (filtered + safe)
 # =============================================================================
-def fetch_cot_reports() -> List[Dict[str, Any]]:
-    """Wrapper آمن حول FUNDAMENTALS.cftc.fetch()."""
+def fetch_cot_reports() -> List[Any]:
+    """
+    جلب تقارير COT مع تصفية Markets التي نتداولها فقط:
+    XAU (GOLD), XAG (SILVER), WTI (CRUDE OIL),
+    EUR (EURO FX), GBP (BRITISH POUND), JPY (JAPANESE YEN).
+    """
     try:
         fetcher = getattr(FUNDAMENTALS, "cftc", None)
         if fetcher is None:
             logger.warning("FUNDAMENTALS.cftc غير موجود — تخطي COT")
             return []
-        data = fetcher.fetch()
-        return data or []
+        all_cot = fetcher.fetch() or []
+        filtered: List[Any] = []
+        for c in all_cot:
+            # يدعم attribute أو dict
+            market_name = (
+                getattr(c, "market", None)
+                if not isinstance(c, dict)
+                else c.get("market")
+            ) or ""
+            if not market_name:
+                continue
+            up = str(market_name).upper()
+            if any(v in up for v in COT_VALID_MARKETS):
+                filtered.append(c)
+        return filtered
     except Exception as e:
         logger.warning("COT fetch failed: %s", e)
         return []
 
 
-def fetch_cpi_data() -> Optional[Dict[str, Any]]:
+def fetch_cpi_data() -> Optional[Any]:
     """Wrapper آمن حول FUNDAMENTALS.cpi.fetch_latest()."""
     try:
         fetcher = getattr(FUNDAMENTALS, "cpi", None)
@@ -807,7 +854,7 @@ def index():
     }
     live_prices = get_live_prices(SYMBOLS)
 
-    # 👇 COT و CPI
+    # 👇 COT (مُصفّى) + CPI
     cot_reports = fetch_cot_reports()
     cpi_data = fetch_cpi_data()
 
@@ -828,8 +875,8 @@ def index():
         fundamental_biases=fundamental_biases,
         timemachine_cache=timemachine_cache,
         live_prices=live_prices,
-        cot_reports=cot_reports,        # 👈 جديد
-        cpi_data=cpi_data,              # 👈 جديد
+        cot_reports=cot_reports,        # 👈 مُصفّى
+        cpi_data=cpi_data,
         settings=USER_SETTINGS,
         symbols=SYMBOLS,
         now=utcnow().strftime("%Y-%m-%d %H:%M UTC"),
@@ -932,7 +979,7 @@ def api_news():
 
 @app.route("/api/news/live")
 def api_news_live():
-    """Live RSS news (used by header widget / auto-refresh)."""
+    """Live RSS news."""
     return jsonify(fetch_live_news())
 
 
@@ -951,13 +998,13 @@ def api_fundamentals():
 
 @app.route("/api/cot")
 def api_cot():
-    """تقارير COT (اختياري للواجهة)."""
+    """تقارير COT مُصفّاة لأسواقنا فقط."""
     return jsonify(fetch_cot_reports())
 
 
 @app.route("/api/cpi")
 def api_cpi():
-    """آخر قراءة CPI (اختياري للواجهة)."""
+    """آخر قراءة CPI."""
     data = fetch_cpi_data()
     return jsonify(data) if data else jsonify({"ok": False, "error": "no_data"}), 200
 
