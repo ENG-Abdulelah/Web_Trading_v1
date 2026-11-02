@@ -52,6 +52,7 @@ SYMBOL_SPECS = {
 }
 
 TIMEFRAME_MAP = {
+    "1M":  ("1m",  "2d"),    # 👈 جديد
     "5M":  ("5m",  "5d"),
     "15M": ("15m", "5d"),
     "1H":  ("60m", "1mo"),
@@ -974,50 +975,49 @@ def analyze_symbol(symbol: str, timeframe: str, style: str,
         "setups": valid,
     }
 
+
 # =============================================================================
 # LIVE PRICES
 # =============================================================================
 def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
-    """Fetch current price + daily change % for each symbol."""
+    """Fetch current price + daily change using direct Yahoo API (bypasses yfinance block)."""
     prices: Dict[str, Dict[str, Any]] = {}
+    
+    # Mapping symbols for direct Yahoo API
+    yahoo_syms = {
+        "XAU/USD": "GC=F", "XAG/USD": "SI=F", "WTI/USD": "CL=F",
+        "EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X"
+    }
+    
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    
     for symbol in symbols:
-        ticker_sym = YF_MAP.get(symbol)
-        if not ticker_sym:
+        ticker = yahoo_syms.get(symbol)
+        if not ticker:
             continue
-        ok = False
-        # Try 1: yf.Ticker
         try:
-            t = yf.Ticker(ticker_sym)
-            df = t.history(period="2d", interval="1d", auto_adjust=False)
-            if df is not None and len(df) >= 2:
-                cur = float(df["Close"].iloc[-1])
-                prev = float(df["Close"].iloc[-2])
-                chg = ((cur - prev) / prev * 100) if prev else 0.0
-                prices[symbol] = {
-                    "price": round(cur, 5),
-                    "change_pct": round(chg, 2),
-                    "prev_close": round(prev, 5),
-                }
-                ok = True
-        except Exception as e:
-            logger.debug("Ticker.history %s failed: %s", symbol, e)
-
-        # Try 2: yf.download
-        if not ok:
-            try:
-                df = yf.download(ticker_sym, period="2d", interval="1d",
-                                 progress=False, auto_adjust=False)
-                if df is not None and len(df) >= 2:
-                    cur = float(df["Close"].iloc[-1])
-                    prev = float(df["Close"].iloc[-2])
+            # Direct query to Yahoo Finance API
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=2d"
+            r = requests.get(url, headers=headers, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            
+            result = data.get("chart", {}).get("result", [])
+            if result and len(result) > 0:
+                meta = result[0].get("meta", {})
+                cur = meta.get("regularMarketPrice")
+                prev = meta.get("chartPreviousClose")
+                
+                if cur and prev:
                     chg = ((cur - prev) / prev * 100) if prev else 0.0
                     prices[symbol] = {
                         "price": round(cur, 5),
                         "change_pct": round(chg, 2),
                         "prev_close": round(prev, 5),
                     }
-            except Exception as e:
-                logger.debug("yf.download %s failed: %s", symbol, e)
+        except Exception as e:
+            logger.debug("Direct API prices %s failed: %s", symbol, e)
+            
     return prices
 
 
@@ -1025,22 +1025,27 @@ def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
 # FALLBACK NEWS FETCHER (with CORS proxies)
 # =============================================================================
 def fetch_news_with_fallback() -> List[Dict[str, Any]]:
-    """Fetch ForexFactory news trying multiple sources."""
+    """Fetch ForexFactory news bypassing Render IP block using proxies."""
+    target_url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
     urls = [
-        "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-        "https://api.allorigins.win/raw?url=https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-        "https://corsproxy.io/?https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+        target_url,  # Try direct first
+        f"https://api.codetabs.com/v1/proxy?quest={target_url}",
+        f"https://corsproxy.io/?{target_url}",
+        f"https://api.allorigins.win/raw?url={target_url}"
     ]
+    
     for url in urls:
         try:
-            r = requests.get(url, timeout=12,
-                             headers={"User-Agent": "Mozilla/5.0"})
+            r = requests.get(url, timeout=12, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
             if r.status_code == 200:
                 data = r.json()
                 if isinstance(data, list) and len(data) > 0:
+                    logger.info(f"News fetched successfully from: {url[:50]}...")
                     return _normalize_news(data)
         except Exception as e:
-            logger.debug("News from %s failed: %s", url, e)
+            logger.debug("News from %s failed: %s", url[:40], e)
+            
+    logger.warning("All news sources failed or were blocked.")
     return []
 
 
