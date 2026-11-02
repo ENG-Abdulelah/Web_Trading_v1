@@ -53,14 +53,17 @@ SYMBOLS = ["XAU/USD", "XAG/USD", "WTI/USD",
            "EUR/USD", "GBP/USD", "USD/JPY"]
 SWING_TF = ["1D", "4H", "1H"]
 SCALPING_TF = ["1H", "15M", "5M"]
-
 USER_SETTINGS: Dict[str, Any] = {
     "capital": 50.0,
     "risk_per_trade_pct": 1.5,
-    "min_score": 0.62,
+    "min_score": 0.50,
     "auto_generate_signals": True,
     "analysis_interval_sec": 90,
     "mode": "single",
+    # 👇 جديد
+    "style_mode": "both",                              # "swing" | "scalping" | "both"
+    "timeframes": ["1D", "4H", "1H", "15M"],            # multi-select
+    "last_cycle_stats": {},                            # populated each cycle
 }
 
 # thread safety for position management
