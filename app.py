@@ -3,7 +3,7 @@
 Web Trading Bot — Personal Trading Analyst (Flask)
 Real market analysis, ICT×20, News guard, Fundamental Bias, TimeMachine,
 Risk gates, Trailing/Breakeven/Partial TP1, Weekend flatten.
-+ DXY, Live RSS News, i18n (AR/EN)
++ DXY, Live RSS News, i18n (AR/EN), COT, CPI, Liquidity/Session snapshot.
 
 Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
 """
@@ -15,8 +15,8 @@ import threading
 import time
 import uuid
 
-import feedparser                       # 👈 جديد (Live News)
-import pandas as pd                     # 👈 جديد (يحتاجه fetch_live_news)
+import feedparser                       # Live RSS
+import pandas as pd                     # fetch_live_news
 
 from analysis_engine import (
     NewsFetcher, SYMBOL_SPECS, analyze_symbol,
@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from flask import (
     Flask, jsonify, render_template, request,
-    redirect, make_response,             # 👈 جديد (i18n)
+    redirect, make_response,
 )
 from database import Database
 from fundamentals import get_engine as get_fundamentals_engine
@@ -57,7 +57,7 @@ RISK = RiskManager(RiskConfig())
 FUNDAMENTALS = get_fundamentals_engine()
 TIMEMACHINE = TimeMachine(DB)
 
-# 👇 DXY مضاف
+# 👇 DXY مضاف — ضروري لعمل COT/CPI وفلتر الدولار
 SYMBOLS = ["XAU/USD", "XAG/USD", "WTI/USD",
            "EUR/USD", "GBP/USD", "USD/JPY", "DXY"]
 
@@ -111,6 +111,12 @@ TRANSLATIONS = {
         "save": "حفظ الإعدادات",
         "no_news": "لا توجد أخبار حديثة.",
         "no_strat": "لا توجد بيانات كافية بعد.",
+        "session": "الجلسة",
+        "liquidity": "السيولة",
+        "cot": "تقارير COT",
+        "cpi": "مؤشر أسعار المستهلك (CPI)",
+        "no_cot": "لا تقارير COT متاحة.",
+        "no_cpi": "لا بيانات CPI متاحة.",
     },
     "en": {
         "title": "Trading Analyst",
@@ -136,6 +142,12 @@ TRANSLATIONS = {
         "save": "Save Settings",
         "no_news": "No recent news.",
         "no_strat": "Not enough data yet.",
+        "session": "Session",
+        "liquidity": "Liquidity",
+        "cot": "COT Reports",
+        "cpi": "Consumer Price Index (CPI)",
+        "no_cot": "No COT reports available.",
+        "no_cpi": "No CPI data available.",
     }
 }
 
@@ -230,11 +242,38 @@ def today_closed() -> List[Dict[str, Any]]:
 
 
 def market_snapshot() -> Dict[str, Any]:
+    """
+    Snapshot مركّز للسوق: حالة الفتح، الجلسة، السيولة، وأخبار الحظر.
+    """
     state = GUARD.state()
     news_blackout = NEWS.high_impact_within(
         minutes_before=30, minutes_after=10,
     )
-    return {**state.to_dict(), "news_blackout": news_blackout}
+
+    # 👇 تحديد مستوى السيولة
+    if not state.is_open:
+        liquidity, liq_color = "مغلقة", "danger"
+    elif state.active_kill_zones:
+        liquidity, liq_color = "قوية جداً", "success"
+    elif getattr(state, "dead_liquidity", False):
+        liquidity, liq_color = "ضعيفة", "danger"
+    else:
+        liquidity, liq_color = "متوسطة", "warning"
+
+    # 👇 اسم الجلسة النشطة (يفضّل name_ar ثم name)
+    if state.active_sessions:
+        s0 = state.active_sessions[0]
+        session_name = s0.get("name_ar") or s0.get("name") or "—"
+    else:
+        session_name = "لا توجد جلسة"
+
+    return {
+        **state.to_dict(),
+        "news_blackout": news_blackout,
+        "liquidity": liquidity,
+        "liq_color": liq_color,
+        "session_name": session_name,
+    }
 
 
 # =============================================================================
@@ -304,7 +343,7 @@ def run_analysis_cycle() -> Dict[str, Any]:
     except Exception as e:
         logger.warning("news cache refresh failed: %s", e)
 
-    # Fundamental Bias
+    # Fundamental Bias (يشمل DXY تلقائياً)
     try:
         biases = FUNDAMENTALS.bias_for_all(SYMBOLS)
         for sym, b in biases.items():
@@ -669,6 +708,36 @@ def _update_filter_weight(strategy: str, realized_r: float) -> None:
 
 
 # =============================================================================
+# COT / CPI FETCHERS (safe wrappers)
+# =============================================================================
+def fetch_cot_reports() -> List[Dict[str, Any]]:
+    """Wrapper آمن حول FUNDAMENTALS.cftc.fetch()."""
+    try:
+        fetcher = getattr(FUNDAMENTALS, "cftc", None)
+        if fetcher is None:
+            logger.warning("FUNDAMENTALS.cftc غير موجود — تخطي COT")
+            return []
+        data = fetcher.fetch()
+        return data or []
+    except Exception as e:
+        logger.warning("COT fetch failed: %s", e)
+        return []
+
+
+def fetch_cpi_data() -> Optional[Dict[str, Any]]:
+    """Wrapper آمن حول FUNDAMENTALS.cpi.fetch_latest()."""
+    try:
+        fetcher = getattr(FUNDAMENTALS, "cpi", None)
+        if fetcher is None:
+            logger.warning("FUNDAMENTALS.cpi غير موجود — تخطي CPI")
+            return None
+        return fetcher.fetch_latest()
+    except Exception as e:
+        logger.warning("CPI fetch failed: %s", e)
+        return None
+
+
+# =============================================================================
 # BACKGROUND SCHEDULER
 # =============================================================================
 _scheduler_lock = threading.Lock()
@@ -728,7 +797,7 @@ def index():
     stats = DB.get_stats()
     strategy_stats = DB.get_filter_stats()
 
-    # 👇 الأخبار الحية الجديدة (بدل DB فقط)
+    # 👇 الأخبار الحية
     live_news = fetch_live_news()
 
     fundamental_biases = DB.get_all_fundamental_bias()
@@ -737,6 +806,10 @@ def index():
         for s in pending
     }
     live_prices = get_live_prices(SYMBOLS)
+
+    # 👇 COT و CPI
+    cot_reports = fetch_cot_reports()
+    cpi_data = fetch_cpi_data()
 
     balance = get_balance()
     open_risk_pct = RISK._portfolio_risk_pct(open_pos, balance)
@@ -751,10 +824,12 @@ def index():
         balance=balance,
         open_risk_pct=round(open_risk_pct, 2),
         strategy_stats=strategy_stats,
-        news=live_news,                    # 👈 Live RSS
+        news=live_news,
         fundamental_biases=fundamental_biases,
         timemachine_cache=timemachine_cache,
         live_prices=live_prices,
+        cot_reports=cot_reports,        # 👈 جديد
+        cpi_data=cpi_data,              # 👈 جديد
         settings=USER_SETTINGS,
         symbols=SYMBOLS,
         now=utcnow().strftime("%Y-%m-%d %H:%M UTC"),
@@ -872,6 +947,19 @@ def api_fundamentals():
         return jsonify(FUNDAMENTALS.snapshot(SYMBOLS))
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/cot")
+def api_cot():
+    """تقارير COT (اختياري للواجهة)."""
+    return jsonify(fetch_cot_reports())
+
+
+@app.route("/api/cpi")
+def api_cpi():
+    """آخر قراءة CPI (اختياري للواجهة)."""
+    data = fetch_cpi_data()
+    return jsonify(data) if data else jsonify({"ok": False, "error": "no_data"}), 200
 
 
 @app.route("/api/timemachine/<signal_uid>")
