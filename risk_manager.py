@@ -146,11 +146,20 @@ class RiskManager:
                 return TradeDecision(False, "tp_wrong_side", checks=checks)
 
         # 3) R:R
+       # rr = abs(tp - entry) / max(abs(entry - sl), 1e-9)
+       # checks["rr"] = round(rr, 2)
+        #if rr < self.cfg.min_rr:
+        #    return TradeDecision(False, f"rr_below_min ({rr:.2f})", checks=checks)
+
+        # 3) R:R
         rr = abs(tp - entry) / max(abs(entry - sl), 1e-9)
         checks["rr"] = round(rr, 2)
-        if rr < self.cfg.min_rr:
-            return TradeDecision(False, f"rr_below_min ({rr:.2f})", checks=checks)
+       # 👇 جديد: منع R:R الخيالي
+       if rr > self.cfg.max_rr:
+       return TradeDecision(False, f"rr_too_high ({rr:.2f} > {self.cfg.max_rr})", checks=checks)
+        
 
+        
         # 4) Concurrency
         if len(open_positions) >= self.cfg.max_open_positions:
             return TradeDecision(False, f"max_open ({len(open_positions)})", checks=checks)
