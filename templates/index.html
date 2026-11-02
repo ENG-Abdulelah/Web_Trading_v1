@@ -546,6 +546,39 @@
                 {% endif %}
             </div>
 
+            <!-- Strategy Performance -->
+            <div class="card-box">
+                <div class="sec-h"><i class="bi bi-trophy"></i> أداء الاستراتيجيات (التعلم الذاتي)</div>
+                <div class="table-responsive">
+                    <table class="table table-sm text-white mb-0" style="font-size: 0.85rem;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid var(--border);">
+                                <th class="c-dim border-0">الاستراتيجية</th>
+                                <th class="c-dim border-0 text-center">الوزن</th>
+                                <th class="c-dim border-0 text-center">W/L</th>
+                                <th class="c-dim border-0 text-end">النجاح</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for s in strategy_stats %}
+                            <tr style="border-bottom: 1px dashed var(--border);">
+                                <td class="border-0">{{ s.strategy }}</td>
+                                <td class="border-0 text-center">
+                                    <span class="badge" style="background:var(--bg-0); border:1px solid var(--border);">{{ '%.2f'|format(s.weight) }}</span>
+                                </td>
+                                <td class="border-0 text-center c-dim">{{ s.wins }}/{{ s.losses }}</td>
+                                <td class="border-0 text-end {% if s.win_rate >= 50 %}c-pos{% else %}c-neg{% endif %} fw-bold">
+                                    {{ '%.1f'|format(s.win_rate) }}%
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="4" class="text-center c-dim py-3 border-0">لا توجد بيانات كافية بعد (تحتاج صفقات مغلقة).</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- Settings -->
             <div class="card-box">
                 <div class="sec-h"><i class="bi bi-gear"></i> الإعدادات</div>
@@ -576,9 +609,9 @@
                     <option value="scalping" {% if settings.style_mode == 'scalping' %}selected{% endif %}>Scalping فقط</option>
                 </select>
 
-                <label class="form-label mt-3">الفريمات الزمنية</label>
+                <label class="form-label mt-3">الفريمات الزمنية للدخول</label>
                 <div id="tf-chips">
-                    {% for tf in ['1W','1D','4H','1H','15M','5M'] %}
+                    {% for tf in ['1H','4H','15M','5M','1M'] %}
                     <span class="tf-chip {% if tf in settings.timeframes %}active{% endif %}" data-tf="{{ tf }}">{{ tf }}</span>
                     {% endfor %}
                 </div>
@@ -637,6 +670,34 @@ async function refreshNews() {
     if (res.ok) { alert(`تم تحميل ${res.count} خبر`); location.reload(); }
     else { alert('فشل تحميل الأخبار'); }
 }
+
+// --- Timeframe Filtering Logic ---
+function updateTimeframeChips() {
+    const style = document.getElementById('set-style').value;
+    const swingTfs = ['1H', '4H'];
+    const scalpTfs = ['1M', '5M', '15M'];
+
+    document.querySelectorAll('.tf-chip').forEach(chip => {
+        const tf = chip.dataset.tf;
+        let show = false;
+        
+        if (style === 'swing' && swingTfs.includes(tf)) show = true;
+        else if (style === 'scalping' && scalpTfs.includes(tf)) show = true;
+        else if (style === 'both' && [...swingTfs, ...scalpTfs].includes(tf)) show = true;
+
+        if (show) {
+            chip.style.display = 'inline-block';
+        } else {
+            chip.style.display = 'none';
+            chip.classList.remove('active'); // إلغاء التحديد إذا تم إخفاؤه
+        }
+    });
+}
+
+// ربط الحدث
+document.getElementById('set-style').addEventListener('change', updateTimeframeChips);
+// تشغيله عند تحميل الصفحة لأول مرة
+document.addEventListener('DOMContentLoaded', updateTimeframeChips);
 
 document.querySelectorAll('.tf-chip').forEach(chip => {
     chip.addEventListener('click', () => chip.classList.toggle('active'));
