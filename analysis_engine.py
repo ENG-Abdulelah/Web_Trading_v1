@@ -3,6 +3,7 @@
 ICT/SMC Analysis Engine — 20 strategies on real OHLCV data.
 NO random or synthetic data used. Uses yfinance for real candles,
 ForexFactory JSON + ForexLive RSS for real news.
+Live prices priority: WebSocket PRICE_STORE → TwelveData → AlphaVantage → Yahoo.
 
 Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
 """
@@ -21,6 +22,12 @@ import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
+
+# 👈 WebSocket price store (اختياري — لن يكسر التطبيق لو غير موجود)
+try:
+    from price_streamer import PRICE_STORE  # type: ignore
+except Exception:  # noqa: BLE001
+    PRICE_STORE: Dict[str, Dict[str, Any]] = {}
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
@@ -1100,23 +1107,52 @@ def get_biquote_instance():
 
 
 # =============================================================================
-# LIVE PRICES (TwelveData → AlphaVantage → Yahoo/Stooq)
+# LIVE PRICES (WebSocket → TwelveData → AlphaVantage → Yahoo)
 # =============================================================================
 _price_cache: Dict[str, Dict[str, Any]] = {}
 _price_cache_time: float = 0.0
 
 
 def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+    """
+    Priority order:
+      1. WebSocket PRICE_STORE (real-time, < 60s fresh)
+      2. TwelveData (cached 30s)
+      3. AlphaVantage
+      4. Yahoo/Stooq
+    """
     global _price_cache, _price_cache_time
     now = _time.time()
 
-    # تخزين مؤقت لمدة 60 ثانية لتجنب استهلاك حدود Twelve Data (8 طلبات/دقيقة)
-    if now - _price_cache_time < 60 and _price_cache:
+    # ------------------------------------------------------------------
+    # 1. الأولوية: WebSocket (لحظي)
+    # ------------------------------------------------------------------
+    live_data: Dict[str, Dict[str, Any]] = {}
+    for sym in symbols:
+        entry = PRICE_STORE.get(sym)
+        if not entry:
+            continue
+        # نتحقق أن السعر حديث (أقل من 60 ثانية)
+        if now - entry.get("timestamp", 0) < 60:
+            live_data[sym] = {
+                "price": entry.get("price"),
+                "change_pct": entry.get("change_pct", 0.0),
+            }
+
+    if live_data:
+        return live_data
+
+    # ------------------------------------------------------------------
+    # 2. إذا لم تصل البيانات بعد (أول ثانية)، استخدم الكاش المؤقت
+    # ------------------------------------------------------------------
+    if now - _price_cache_time < 30 and _price_cache:
         return _price_cache
 
     prices: Dict[str, Dict[str, Any]] = {}
 
-    # 1. المحاولة الأولى: Twelve Data (الأفضل والأسرع)
+    # ------------------------------------------------------------------
+    # 3. TwelveData (خطة بديلة سريعة)
+    # ------------------------------------------------------------------
     td_key = os.getenv("TWELVE_DATA_API_KEY")
     if td_key:
         td_syms = {
@@ -1142,7 +1178,9 @@ def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
         except Exception as e:
             logger.warning(f"TwelveData failed: {e}")
 
-    # 2. المحاولة الثانية: Alpha Vantage (احتياطي)
+    # ------------------------------------------------------------------
+    # 4. Alpha Vantage (احتياطي)
+    # ------------------------------------------------------------------
     av_key = os.getenv("ALPHA_VANTAGE_API_KEY")
     if av_key and not prices:
         av_syms = {
@@ -1164,7 +1202,9 @@ def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
             _price_cache, _price_cache_time = prices, now
             return prices
 
-    # 3. المحاولة الثالثة: Yahoo/Stooq (الكود القديم كخط أخير)
+    # ------------------------------------------------------------------
+    # 5. Yahoo/Stooq (خط أخير)
+    # ------------------------------------------------------------------
     yahoo_syms = {
         "XAU/USD": "GC=F", "XAG/USD": "SI=F", "WTI/USD": "CL=F",
         "EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X",
