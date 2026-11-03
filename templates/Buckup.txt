@@ -1,236 +1,141 @@
 <!DOCTYPE html>
-<html lang="{{ lang }}" dir="{% if is_rtl %}rtl{% else %}ltr{% endif %}">
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ t.title }}</title>
+<title>Web Trading Analyst</title>
 
-{% if is_rtl %}
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
-{% else %}
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-{% endif %}
+<script>
+(function () {
+    var lang = localStorage.getItem("lang") || "ar";
+    document.documentElement.setAttribute("lang", lang);
+    document.documentElement.setAttribute("dir", lang === "ar" ? "rtl" : "ltr");
+})();
+</script>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css"
+      rel="stylesheet" id="bootstrap-css">
+<script>
+(function () {
+    var lang = localStorage.getItem("lang") || "ar";
+    if (lang !== "ar") {
+        var el = document.getElementById("bootstrap-css");
+        if (el) el.href = "https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css";
+    }
+})();
+</script>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
 
 <style>
     :root {
-        --bg-0: #070a10;
-        --bg-1: #0e1420;
-        --bg-2: #151d2e;
-        --bg-3: #1c2740;
-        --border: #263252;
-        --border-hi: #3a4a72;
-        --text: #e8eef7;
-        --text-dim: #8a96ad;
-        --cyan: #06d6f5;
-        --cyan-dim: #0891b2;
-        --emerald: #10b981;
-        --rose: #f43f5e;
-        --amber: #f59e0b;
-        --violet: #8b5cf6;
+        --bg-0: #070a10; --bg-1: #0e1420; --bg-2: #151d2e; --bg-3: #1c2740;
+        --border: #263252; --text: #e8eef7; --text-dim: #8a96ad;
+        --cyan: #06d6f5; --emerald: #10b981; --rose: #f43f5e; --amber: #f59e0b;
     }
     * { box-sizing: border-box; }
-    body {
-        background: radial-gradient(ellipse at top, #0f1729 0%, #070a10 70%);
-        background-attachment: fixed;
-        color: var(--text);
-        font-family: 'Segoe UI', Tahoma, sans-serif;
-        min-height: 100vh;
-        margin: 0;
-    }
+    body { background: var(--bg-0); color: var(--text); font-family: 'Segoe UI', Tahoma, sans-serif; }
 
-    /* ============ TOP BAR ============ */
     .top-bar {
-        background: linear-gradient(90deg, var(--bg-1) 0%, var(--bg-2) 100%);
-        border-bottom: 1px solid var(--border);
-        padding: .85rem 1.25rem;
-        position: sticky; top: 0; z-index: 100;
-        backdrop-filter: blur(8px);
+        background: var(--bg-1); border-bottom: 1px solid var(--border);
+        padding: .85rem 1.25rem; position: sticky; top: 0; z-index: 100;
     }
     .brand {
-        font-size: 1.15rem; font-weight: 800; letter-spacing: -.5px;
-        background: linear-gradient(90deg, var(--cyan) 0%, var(--violet) 100%);
+        font-size: 1.15rem; font-weight: 800;
+        background: linear-gradient(90deg, var(--cyan) 0%, #8b5cf6 100%);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         background-clip: text;
     }
-    .market-pill {
-        font-size: .8rem; padding: .4rem .9rem;
-        border-radius: 20px; font-weight: 700;
-        letter-spacing: .3px;
-    }
 
-    /* ============ TICKER ============ */
     .ticker-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-        gap: .65rem;
-        margin-bottom: 1.25rem;
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: .65rem; margin-bottom: 1.25rem;
     }
     .ticker-item {
-        background: linear-gradient(135deg, var(--bg-2) 0%, var(--bg-3) 100%);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: .65rem .85rem;
-        display: flex; flex-direction: column;
-        transition: all .2s;
+        background: var(--bg-2); border: 1px solid var(--border);
+        border-radius: 10px; padding: .65rem; text-align: center;
         position: relative;
-        overflow: hidden;
     }
-    .ticker-item::before {
-        content: '';
-        position: absolute;
-        top: 0; left: 0; right: 0; height: 2px;
-        background: var(--cyan);
+    .ticker-item.up::before,
+    .ticker-item.down::before {
+        content: ''; position: absolute; top: 0; left: 0; right: 0;
+        height: 3px; border-radius: 10px 10px 0 0;
     }
     .ticker-item.up::before { background: var(--emerald); }
     .ticker-item.down::before { background: var(--rose); }
-    .ticker-symbol { font-weight: 700; font-size: .8rem; color: var(--text-dim); }
-    .ticker-price { font-size: 1.1rem; font-weight: 700; margin-top: .15rem; }
-    .ticker-change { font-size: .78rem; font-weight: 600; }
 
-    /* ============ CARDS ============ */
     .card-box {
-        background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 100%);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 1.1rem 1.25rem;
-        margin-bottom: 1rem;
+        background: var(--bg-1); border: 1px solid var(--border);
+        border-radius: 12px; padding: 1.1rem; margin-bottom: 1rem;
     }
     .stat-box {
-        background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 100%);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: .85rem 1rem;
-        text-align: center;
+        background: var(--bg-2); border: 1px solid var(--border);
+        border-radius: 10px; padding: .85rem; text-align: center;
     }
-    .stat-label { color: var(--text-dim); font-size: .75rem; font-weight: 600; }
-    .stat-value { font-size: 1.35rem; font-weight: 800; margin-top: .2rem; }
-
-    /* ============ SECTION HEADERS ============ */
     .sec-h {
         font-size: 1rem; font-weight: 700;
-        display: flex; align-items: center; gap: .5rem;
-        padding-bottom: .6rem; margin-bottom: .9rem;
         border-bottom: 1px solid var(--border);
-    }
-    .sec-h i {
-        color: var(--cyan); font-size: 1.1rem;
+        padding-bottom: .6rem; margin-bottom: .9rem;
     }
 
-    /* ============ SIGNAL CARD ============ */
     .signal {
-        background: var(--bg-1);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 1rem 1.1rem;
-        margin-bottom: .85rem;
+        background: var(--bg-2); border: 1px solid var(--border);
+        border-radius: 12px; padding: 1rem; margin-bottom: .85rem;
         position: relative;
-        overflow: hidden;
     }
-    .signal::before {
-        content: '';
-        position: absolute;
-        top: 0; bottom: 0; right: 0; width: 4px;
-    }
-    [dir="ltr"] .signal::before { right: auto; left: 0; }
-    .signal.buy::before { background: var(--emerald); }
-    .signal.sell::before { background: var(--rose); }
+    .signal.buy  { border-inline-start: 4px solid var(--emerald); }
+    .signal.sell { border-inline-start: 4px solid var(--rose); }
 
-    .signal-header {
-        display: flex; justify-content: space-between;
-        align-items: center; margin-bottom: .75rem;
-        flex-wrap: wrap; gap: .5rem;
-    }
-    .signal-symbol {
-        font-size: 1.25rem; font-weight: 800;
-    }
     .badge-dir {
         padding: .3rem .65rem; border-radius: 6px;
         font-weight: 700; font-size: .75rem;
-        letter-spacing: .5px;
     }
-
     .price-row {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: .5rem;
-        margin: .75rem 0;
+        display: grid; grid-template-columns: repeat(3, 1fr);
+        gap: .5rem; margin: .75rem 0;
     }
     .price-cell {
-        background: var(--bg-0);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: .5rem;
-        text-align: center;
+        background: var(--bg-0); border: 1px solid var(--border);
+        border-radius: 8px; padding: .5rem; text-align: center;
     }
-    .price-cell .label {
-        font-size: .7rem; color: var(--text-dim);
-        font-weight: 600; text-transform: uppercase;
-    }
-    .price-cell .value {
-        font-size: .95rem; font-weight: 700; margin-top: .15rem;
-    }
+    .price-cell .label { font-size: .7rem; color: var(--text-dim); }
+    .price-cell .value { font-size: .95rem; font-weight: 700; }
 
-    /* ============ COLORS ============ */
     .c-pos { color: var(--emerald) !important; }
     .c-neg { color: var(--rose) !important; }
     .c-dim { color: var(--text-dim) !important; }
     .c-cyan { color: var(--cyan) !important; }
-    .c-amber { color: var(--amber) !important; }
 
-    /* ============ BUTTONS ============ */
     .btn-approve {
-        background: var(--emerald);
-        border: none; color: #fff; font-weight: 700;
-        border-radius: 8px; padding: .55rem 1rem;
-        transition: .2s;
+        background: var(--emerald); border: none; color: #fff;
+        font-weight: 700; border-radius: 8px; padding: .55rem;
+        transition: .15s;
     }
     .btn-approve:hover { background: #059669; color: #fff; }
     .btn-reject {
-        background: transparent;
-        border: 1px solid var(--rose);
-        color: var(--rose); font-weight: 700;
-        border-radius: 8px; padding: .55rem 1rem;
-        transition: .2s;
+        background: transparent; border: 1px solid var(--rose);
+        color: var(--rose); font-weight: 700; border-radius: 8px;
+        padding: .55rem; transition: .15s;
     }
     .btn-reject:hover { background: var(--rose); color: #fff; }
 
-    /* ============ BIAS GRID (7 cards incl. DXY) ============ */
     .bias-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); /* 👈 صغرنا العرض لدعم 7 بطاقات */
+        grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
         gap: .4rem;
     }
     .bias-box {
-        background: var(--bg-0);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: .5rem;
-        text-align: center;
+        background: var(--bg-0); border: 1px solid var(--border);
+        border-radius: 8px; padding: .6rem; text-align: center;
     }
-    .bias-sym { font-size: .72rem; font-weight: 700; color: var(--text-dim); }
-    .bias-val { font-size: .95rem; font-weight: 800; margin: .15rem 0; }
-    .bias-conf { font-size: .65rem; color: var(--text-dim); }
 
-    /* ============ NEWS ============ */
-    .news-row {
-        display: flex; justify-content: space-between;
-        align-items: center; padding: .55rem 0;
-        border-bottom: 1px dashed var(--border);
-        font-size: .82rem; gap: .5rem;
-    }
-    .news-row:last-child { border-bottom: none; }
-    .impact-dot {
-        display: inline-block;
-        width: 7px; height: 7px; border-radius: 50%;
-        margin-left: .4rem;
-    }
-    [dir="ltr"] .impact-dot { margin-left: 0; margin-right: .4rem; }
-    .impact-high { background: var(--rose); box-shadow: 0 0 6px var(--rose); }
-    .impact-medium { background: var(--amber); }
-    .impact-low { background: var(--emerald); }
+    .table-dark { --bs-table-bg: transparent; color: var(--text); font-size: 0.8rem; }
+    .table-dark th, .table-dark td { border-color: var(--border); }
 
-    /* ============ SETTINGS ============ */
+    .news-link {
+        color: var(--text); text-decoration: none; transition: .15s;
+    }
+    .news-link:hover { color: var(--cyan); }
+
     .form-control, .form-select {
         background: var(--bg-0) !important;
         border: 1px solid var(--border) !important;
@@ -245,7 +150,6 @@
     .form-check-input { background-color: var(--bg-0); border-color: var(--border); }
     .form-check-input:checked { background-color: var(--cyan); border-color: var(--cyan); }
 
-    /* ============ TIMEFRAME CHIPS ============ */
     .tf-chip {
         display: inline-block;
         padding: .35rem .75rem;
@@ -265,176 +169,104 @@
         border-color: var(--cyan);
     }
     .tf-chip:hover { border-color: var(--cyan); }
-
-    /* ============ DIAGNOSTICS ============ */
-    .diag-row {
-        display: flex; justify-content: space-between;
-        padding: .4rem 0; font-size: .82rem;
-        border-bottom: 1px dashed var(--border);
-    }
-    .diag-row:last-child { border-bottom: none; }
-    .diag-label { color: var(--text-dim); }
-    .diag-val { font-weight: 700; }
-
-    /* ============ FOOTER ============ */
-    footer {
-        text-align: center; padding: 1.5rem 1rem;
-        border-top: 1px solid var(--border);
-        margin-top: 2rem;
-    }
-    footer .credit {
-        font-weight: 800; font-size: .95rem;
-        background: linear-gradient(90deg, var(--cyan) 0%, var(--violet) 100%);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-
-    /* Alert */
-    .alert-box {
-        padding: .75rem 1rem;
-        border-radius: 10px;
-        margin-bottom: 1rem;
-        font-weight: 600;
-        font-size: .9rem;
-    }
-    .alert-danger-box {
-        background: rgba(244, 63, 94, .1);
-        border: 1px solid var(--rose);
-        color: var(--rose);
-    }
-    .alert-info-box {
-        background: rgba(6, 214, 245, .08);
-        border: 1px solid var(--cyan);
-        color: var(--cyan);
-    }
-
-    /* ============ LANGUAGE SWITCHER ============ */
-    .lang-btn {
-        background: transparent;
-        border: 1px solid var(--border-hi);
-        color: var(--cyan);
-        border-radius: 8px;
-        font-size: .75rem;
-        font-weight: 700;
-        padding: .3rem .65rem;
-        transition: .15s;
-    }
-    .lang-btn:hover { border-color: var(--cyan); color: var(--cyan); }
-    .dropdown-menu {
-        background: var(--bg-2);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-    }
-    .dropdown-item {
-        color: var(--text);
-        font-size: .82rem;
-        padding: .4rem .9rem;
-    }
-    .dropdown-item:hover { background: var(--bg-3); color: var(--cyan); }
 </style>
 </head>
 <body>
 
-<!-- ============ TOP BAR ============ -->
 <div class="top-bar">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <div class="d-flex align-items-center gap-3">
-            <span class="brand"><i class="bi bi-graph-up-arrow"></i> {{ t.title }}</span>
-            {% if market.is_open %}
-                <span class="market-pill" style="background: rgba(16,185,129,.2); color: var(--emerald);">
-                    <i class="bi bi-circle-fill" style="font-size:.5rem;"></i> {{ t.market_open }}
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        
+        <div>
+            <div class="mb-2">
+                <span class="brand fs-5"><i class="bi bi-graph-up-arrow"></i> Web Trading Analyst</span>
+            </div>
+            
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                {% if market.is_open %}
+                    <span class="badge bg-success"><i class="bi bi-circle-fill" style="font-size:.5rem;"></i> <span data-i18n="market_open">السوق مفتوح</span></span>
+                {% else %}
+                    <span class="badge bg-danger"><i class="bi bi-circle-fill" style="font-size:.5rem;"></i> <span data-i18n="market_closed">السوق مغلق</span></span>
+                {% endif %}
+                
+                <span class="badge bg-secondary"><i class="bi bi-clock"></i> الجلسة: {{ market.session_name }}</span>
+                
+                <span class="badge bg-{{ market.liq_color }} {% if market.liq_color == 'warning' %}text-dark{% endif %}">
+                    <i class="bi bi-droplet-half"></i> <span data-i18n="liquidity">السيولة</span>: {{ market.liquidity }}
                 </span>
-            {% else %}
-                <span class="market-pill" style="background: rgba(244,63,94,.2); color: var(--rose);">
-                    <i class="bi bi-circle-fill" style="font-size:.5rem;"></i> {{ t.market_closed }}
-                </span>
-            {% endif %}
-        </div>
 
-        <div class="d-flex align-items-center gap-3">
-            <div class="c-dim small">{{ now }}</div>
-            <div class="dropdown">
-                <button class="lang-btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                    <i class="bi bi-translate"></i> {{ 'AR' if lang == 'en' else 'EN' }}
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end" style="min-width:110px;">
-                    <li><a class="dropdown-item" href="/set-lang/ar">العربية</a></li>
-                    <li><a class="dropdown-item" href="/set-lang/en">English</a></li>
-                </ul>
+                {% if not market.is_open and market.next_open_ts %}
+                <span class="badge bg-dark border border-warning text-warning">
+                    <i class="bi bi-hourglass-split"></i> يفتح خلال: <span id="countdown-timer" class="fw-bold"></span>
+                </span>
+                {% endif %}
             </div>
         </div>
+
+        <div class="d-flex align-items-center gap-3 mt-1">
+            <div class="c-dim small">{{ now }}</div>
+            <button class="btn btn-sm btn-outline-info" onclick="toggleLanguage()" style="border-radius:8px; font-size:0.75rem;">
+                <i class="bi bi-translate"></i> <span id="lang-btn-text">EN</span>
+            </button>
+        </div>
+        
     </div>
 </div>
 
 <div class="container-fluid py-3 px-3 px-md-4">
 
-    <!-- ============ ALERTS ============ -->
-    {% if not market.is_open %}
-    <div class="alert-danger-box alert-box">
-        <i class="bi bi-exclamation-triangle"></i> {{ market.blocked_reason }}
-    </div>
-    {% endif %}
-    {% if market.news_blackout %}
-    <div class="alert-danger-box alert-box">
-        <i class="bi bi-newspaper"></i> {{ t.news }}: {{ market.news_blackout.title }}
-    </div>
-    {% endif %}
-
-    <!-- ============ LIVE PRICES ============ -->
-    <div class="sec-h"><i class="bi bi-activity"></i> {{ t.live_prices }}</div>
+    <div class="sec-h"><i class="bi bi-activity"></i> <span data-i18n="live_prices">الأسعار الحية</span></div>
     <div class="ticker-grid">
         {% for sym in symbols %}
             {% set p = live_prices.get(sym) %}
             {% if p %}
             <div class="ticker-item {% if p.change_pct > 0 %}up{% elif p.change_pct < 0 %}down{% endif %}">
-                <div class="ticker-symbol">{{ sym }}</div>
-                <div class="ticker-price">{{ p.price }}</div>
-                <div class="ticker-change {% if p.change_pct > 0 %}c-pos{% elif p.change_pct < 0 %}c-neg{% else %}c-dim{% endif %}">
+                <div class="c-dim small fw-bold">{{ sym }}</div>
+                <div class="fs-5 fw-bold mt-1">{{ p.price }}</div>
+                <div class="small {% if p.change_pct > 0 %}c-pos{% elif p.change_pct < 0 %}c-neg{% else %}c-dim{% endif %}">
                     {% if p.change_pct > 0 %}▲{% elif p.change_pct < 0 %}▼{% else %}—{% endif %}
                     {{ '%+.2f'|format(p.change_pct) }}%
                 </div>
             </div>
             {% else %}
             <div class="ticker-item">
-                <div class="ticker-symbol">{{ sym }}</div>
-                <div class="ticker-price c-dim">—</div>
-                <div class="ticker-change c-dim">—</div>
+                <div class="c-dim small fw-bold">{{ sym }}</div>
+                <div class="fs-5 fw-bold mt-1 c-dim">—</div>
+                <div class="small c-dim">—</div>
             </div>
             {% endif %}
         {% endfor %}
     </div>
 
-    <!-- ============ STATS ============ -->
     <div class="row g-2 mb-3">
-        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">{{ t.balance }}</div><div class="stat-value">${{ balance }}</div></div></div>
-        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">{{ t.pending }}</div><div class="stat-value c-cyan">{{ pending_signals|length }}</div></div></div>
-        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">{{ t.open_pos }}</div><div class="stat-value c-amber">{{ open_positions|length }}</div></div></div>
-        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">{{ t.risk }}</div><div class="stat-value {% if open_risk_pct > 5 %}c-neg{% else %}c-pos{% endif %}">{{ open_risk_pct }}%</div></div></div>
-        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">{{ t.pnl }}</div><div class="stat-value {% if stats.closed_pnl >= 0 %}c-pos{% else %}c-neg{% endif %}">${{ stats.closed_pnl }}</div></div></div>
-        <div class="col-6 col-md-2"><div class="stat-box"><div class="stat-label">{{ t.win_rate }}</div><div class="stat-value c-amber">{{ stats.win_rate }}%</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="c-dim small fw-bold" data-i18n="balance">الرصيد</div><div class="fs-5 fw-bold">${{ balance }}</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="c-dim small fw-bold" data-i18n="pending">معلقة</div><div class="fs-5 fw-bold c-cyan">{{ pending_signals|length }}</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="c-dim small fw-bold" data-i18n="open_pos">مفتوحة</div><div class="fs-5 fw-bold" style="color:var(--amber);">{{ open_positions|length }}</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="c-dim small fw-bold" data-i18n="risk">مخاطرة</div><div class="fs-5 fw-bold {% if open_risk_pct > 5 %}c-neg{% else %}c-pos{% endif %}">{{ open_risk_pct }}%</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="c-dim small fw-bold" data-i18n="pnl">P&L</div><div class="fs-5 fw-bold {% if stats.closed_pnl >= 0 %}c-pos{% else %}c-neg{% endif %}">${{ stats.closed_pnl }}</div></div></div>
+        <div class="col-6 col-md-2"><div class="stat-box"><div class="c-dim small fw-bold" data-i18n="win_rate">نجاح</div><div class="fs-5 fw-bold" style="color:var(--amber);">{{ stats.win_rate }}%</div></div></div>
     </div>
 
     <div class="row g-3">
-        <!-- ============ LEFT: SIGNALS ============ -->
         <div class="col-lg-7">
             <div class="card-box">
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <div class="sec-h mb-0" style="border: none; padding: 0;">
-                        <i class="bi bi-lightbulb"></i> {{ t.signals }}
-                        <span class="badge" style="background:var(--cyan); color:var(--bg-0);">{{ pending_signals|length }}</span>
+                    <div class="sec-h mb-0 border-0 pb-0">
+                        <i class="bi bi-lightbulb"></i>
+                        <span data-i18n="signals">توصيات ICT</span>
                     </div>
-                    <button class="btn btn-sm btn-outline-info" onclick="runAnalysis()" style="border-radius:8px;">
-                        <i class="bi bi-arrow-clockwise"></i> {{ t.analyze_now }}
+                    <button class="btn btn-sm btn-outline-info" onclick="runAnalysis()">
+                        <i class="bi bi-arrow-clockwise"></i>
+                        <span data-i18n="analyze_now">تحليل الآن</span>
                     </button>
                 </div>
 
                 {% if pending_signals %}
                     {% for s in pending_signals %}
                     <div class="signal {{ s.direction|lower }}">
-                        <div class="signal-header">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
                             <div>
-                                <span class="signal-symbol">{{ s.symbol }}</span>
-                                <span class="badge-dir {% if s.direction == 'BUY' %}c-pos{% else %}c-neg{% endif %}" 
+                                <span class="fs-5 fw-bold">{{ s.symbol }}</span>
+                                <span class="badge-dir {% if s.direction == 'BUY' %}c-pos{% else %}c-neg{% endif %}"
                                       style="background: {% if s.direction == 'BUY' %}rgba(16,185,129,.15){% else %}rgba(244,63,94,.15){% endif %};">
                                     {{ s.direction }}
                                 </span>
@@ -442,79 +274,82 @@
                                 <span class="badge-dir c-dim" style="background:var(--bg-0);">{{ s.timeframe }} · {{ s.style }}</span>
                             </div>
                             <div class="text-end">
-                                <div class="badge-dir c-amber" style="background:rgba(245,158,11,.15);">Score {{ '%.2f'|format(s.score) }}</div>
+                                <span class="badge bg-warning text-dark">
+                                    <span data-i18n="score">Score</span> {{ '%.2f'|format(s.score) }}
+                                </span>
                             </div>
                         </div>
 
                         <div class="price-row">
-                            <div class="price-cell">
-                                <div class="label">{{ t.entry }}</div>
-                                <div class="value c-cyan">{{ s.entry }}</div>
-                            </div>
-                            <div class="price-cell">
-                                <div class="label">{{ t.sl }}</div>
-                                <div class="value c-neg">{{ s.stop_loss }}</div>
-                            </div>
-                            <div class="price-cell">
-                                <div class="label">{{ t.tp }}</div>
-                                <div class="value c-pos">{{ s.take_profit }}</div>
-                            </div>
-                        </div>
-
-                        <div class="mb-2 small c-dim">
-                            <i class="bi bi-shield-check"></i> R:R 1:{{ s.risk_reward }} 
-                            &nbsp; | &nbsp; 
-                            <i class="bi bi-award"></i> {{ (s.confidence * 100)|round(0) }}%
-                            {% set tm = timemachine_cache.get(s.signal_uid) %}
-                            {% if tm %}
-                                &nbsp; | &nbsp; <i class="bi bi-cpu"></i> Monte Carlo: 
-                                <b class="{% if tm.verdict in ('STRONG','GOOD') %}c-pos{% else %}c-amber{% endif %}">{{ tm.verdict }}</b>
-                                (WR {{ '%.0f'|format(tm.win_rate) }}%)
-                            {% endif %}
+                            <div class="price-cell"><div class="label" data-i18n="entry">الدخول</div><div class="value c-cyan">{{ s.entry }}</div></div>
+                            <div class="price-cell"><div class="label" data-i18n="sl">وقف الخسارة</div><div class="value c-neg">{{ s.stop_loss }}</div></div>
+                            <div class="price-cell"><div class="label" data-i18n="tp">الهدف</div><div class="value c-pos">{{ s.take_profit }}</div></div>
                         </div>
 
                         <div class="d-flex gap-2 mt-2">
                             <button class="btn-approve flex-grow-1" onclick="approveSignal('{{ s.signal_uid }}')">
-                                <i class="bi bi-check-circle"></i> {{ t.approve }}
+                                <i class="bi bi-check-circle"></i> <span data-i18n="approve">موافقة وتنفيذ</span>
                             </button>
                             <button class="btn-reject flex-grow-1" onclick="rejectSignal('{{ s.signal_uid }}')">
-                                <i class="bi bi-x-circle"></i> {{ t.reject }}
+                                <i class="bi bi-x-circle"></i> <span data-i18n="reject">رفض</span>
                             </button>
                         </div>
                     </div>
                     {% endfor %}
                 {% else %}
-                    <div class="text-center c-dim py-4">
-                        <i class="bi bi-hourglass-split" style="font-size: 2.5rem; opacity: .4;"></i>
-                        <p class="mt-2 mb-0 small">{{ t.no_signals }}</p>
+                    <div class="text-center py-5">
+                        {% if not market.is_open %}
+                            <i class="bi bi-moon-stars text-warning" style="font-size: 3rem; opacity: 0.8;"></i>
+                            <h5 class="mt-3 text-warning fw-bold">السوق مغلق حالياً (عطلة نهاية الأسبوع)</h5>
+                            <p class="c-dim small mb-3 px-3">
+                                لحماية رأس مالك، يتوقف النظام عن التحليل وقت إغلاق السوق. 
+                                سيبدأ التحليل التلقائي وتوليد التوصيات بعد <b>5 دقائق</b> من افتتاح السوق.
+                            </p>
+                            {% if market.next_open_ts %}
+                            <div class="p-3 mx-auto rounded border border-secondary" style="background: var(--bg-0); max-width: 300px;">
+                                <div class="small c-dim mb-1">يتبقى لفتح السوق:</div>
+                                <div class="fs-4 fw-bold c-cyan" id="empty-countdown">--:--:--</div>
+                            </div>
+                            {% endif %}
+                            
+                        {% elif market.news_blackout %}
+                            <i class="bi bi-newspaper text-danger" style="font-size: 3rem; opacity: 0.8;"></i>
+                            <h5 class="mt-3 text-danger fw-bold">حظر أخبار اقتصادية</h5>
+                            <p class="c-dim small mb-0 px-3">
+                                يوجد خبر مؤثر جداً ({{ market.news_blackout.title }}). النظام يوقف التداول لتجنب التقلبات العشوائية.
+                            </p>
+                            
+                        {% else %}
+                            <i class="bi bi-search text-success" style="font-size: 3rem; opacity: 0.8;"></i>
+                            <h5 class="mt-3 text-success fw-bold">السوق مفتوح والنظام يحلل...</h5>
+                            <p class="c-dim small mb-0 px-3">
+                                النظام يراقب 20 استراتيجية ICT عبر 6 أزواج. سيتم عرض التوصية فور تحقق شروط الدخول الآمنة (Score عالي + R:R مناسب).
+                            </p>
+                        {% endif %}
                     </div>
                 {% endif %}
             </div>
 
-            <!-- ============ OPEN POSITIONS ============ -->
             {% if open_positions %}
             <div class="card-box">
-                <div class="sec-h"><i class="bi bi-briefcase"></i> {{ t.open_pos }}</div>
+                <div class="sec-h">
+                    <i class="bi bi-briefcase"></i>
+                    <span data-i18n="open_pos">المراكز المفتوحة</span>
+                </div>
                 {% for p in open_positions %}
-                <div class="signal {{ p.side }}" style="margin-bottom:.5rem;">
-                    <div class="signal-header">
+                <div class="signal {{ p.side }}">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
                         <div>
-                            <span class="signal-symbol">{{ p.symbol }}</span>
-                            <span class="badge-dir {% if p.side == 'buy' %}c-pos{% else %}c-neg{% endif %}"
-                                  style="background: {% if p.side == 'buy' %}rgba(16,185,129,.15){% else %}rgba(244,63,94,.15){% endif %};">
-                                {{ p.side|upper }}
-                            </span>
+                            <span class="fs-5 fw-bold">{{ p.symbol }}</span>
+                            <span class="badge-dir {% if p.side == 'buy' %}c-pos{% else %}c-neg{% endif %}">{{ p.side|upper }}</span>
+                            <span class="badge-dir c-dim" style="background:var(--bg-0);">{{ p.strategy }}</span>
                         </div>
                         <code class="c-dim small">{{ p.ticket_id }}</code>
                     </div>
                     <div class="price-row">
-                        <div class="price-cell"><div class="label">{{ t.entry }}</div><div class="value c-cyan">{{ p.entry_price }}</div></div>
-                        <div class="price-cell"><div class="label">{{ t.sl }}</div><div class="value c-neg">{{ p.current_sl }}</div></div>
-                        <div class="price-cell"><div class="label">{{ t.tp }}</div><div class="value c-pos">{{ p.current_tp }}</div></div>
-                    </div>
-                    <div class="small c-dim">
-                        <i class="bi bi-box"></i> {{ p.lot_size }} · 
-                        <i class="bi bi-clock"></i> {{ p.open_time[:16] }}
+                        <div class="price-cell"><div class="label" data-i18n="entry">الدخول</div><div class="value c-cyan">{{ p.entry_price }}</div></div>
+                        <div class="price-cell"><div class="label" data-i18n="sl">وقف الخسارة</div><div class="value c-neg">{{ p.current_sl }}</div></div>
+                        <div class="price-cell"><div class="label" data-i18n="tp">الهدف</div><div class="value c-pos">{{ p.current_tp }}</div></div>
                     </div>
                 </div>
                 {% endfor %}
@@ -522,39 +357,20 @@
             {% endif %}
         </div>
 
-        <!-- ============ RIGHT: SIDEBAR ============ -->
         <div class="col-lg-5">
-            <!-- Diagnostics -->
             <div class="card-box">
-                <div class="sec-h"><i class="bi bi-speedometer2"></i> {{ t.diagnostics }}</div>
-                {% set lc = settings.last_cycle_stats or {} %}
-                {% if lc %}
-                <div class="diag-row"><span class="diag-label">{{ t.analyze_now }}</span><span class="diag-val c-dim small">{{ (lc.started_at or '')[:16] }}</span></div>
-                <div class="diag-row"><span class="diag-label">Raw setups</span><span class="diag-val c-cyan">{{ lc.raw_setups or 0 }}</span></div>
-                <div class="diag-row"><span class="diag-label">Generated</span><span class="diag-val c-pos">{{ lc.generated or 0 }}</span></div>
-                <div class="diag-row"><span class="diag-label">Low score</span><span class="diag-val c-amber">{{ lc.rejections.low_score or 0 }}</span></div>
-                <div class="diag-row"><span class="diag-label">{{ t.fundamental }}</span><span class="diag-val c-amber">{{ lc.rejections.fundamental_misalignment or 0 }}</span></div>
-                <div class="diag-row"><span class="diag-label">{{ t.risk }}</span><span class="diag-val c-amber">{{ lc.rejections.risk_gate or 0 }}</span></div>
-                <div class="diag-row"><span class="diag-label">Monte Carlo</span><span class="diag-val c-amber">{{ lc.rejections.timemachine_weak or 0 }}</span></div>
-                {% if lc.blocked_reason %}
-                <div class="diag-row"><span class="diag-label">Blocked</span><span class="diag-val c-neg small">{{ lc.blocked_reason }}</span></div>
-                {% endif %}
-                {% else %}
-                <div class="c-dim small">{{ t.analyze_now }} —</div>
-                {% endif %}
-            </div>
-
-            <!-- Fundamental Bias (7 cards including DXY) -->
-            <div class="card-box">
-                <div class="sec-h"><i class="bi bi-globe2"></i> {{ t.fundamental }}</div>
+                <div class="sec-h">
+                    <i class="bi bi-globe2"></i>
+                    <span data-i18n="fundamental">التحليل الأساسي</span>
+                </div>
                 <div class="bias-grid">
                     {% for sym, fb in fundamental_biases.items() %}
                     <div class="bias-box">
-                        <div class="bias-sym">{{ sym }}</div>
-                        <div class="bias-val {% if fb.bias > 0.1 %}c-pos{% elif fb.bias < -0.1 %}c-neg{% else %}c-dim{% endif %}">
+                        <div class="c-dim small fw-bold">{{ sym }}</div>
+                        <div class="fs-6 fw-bold {% if fb.bias > 0.1 %}c-pos{% elif fb.bias < -0.1 %}c-neg{% else %}c-dim{% endif %}">
                             {{ '%+.2f'|format(fb.bias) }}
                         </div>
-                        <div class="bias-conf">{{ (fb.confidence * 100)|round(0) }}%</div>
+                        <div class="c-dim" style="font-size:.65rem;">{{ (fb.confidence * 100)|round(0) }}%</div>
                     </div>
                     {% else %}
                     <div class="c-dim small">—</div>
@@ -562,65 +378,120 @@
                 </div>
             </div>
 
-            <!-- News (live RSS) -->
             <div class="card-box">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <div class="sec-h mb-0" style="border:none; padding:0;">
-                        <i class="bi bi-newspaper"></i> {{ t.news }}
-                    </div>
-                    <button class="btn btn-sm btn-outline-info" onclick="refreshNews()" style="border-radius:6px; font-size:.7rem;">
-                        <i class="bi bi-arrow-clockwise"></i>
-                    </button>
-                </div>
-                <div style="max-height: 320px; overflow-y: auto; padding-right: 5px;">
-                    {% if news %}
-                        {% for n in news %}
-                        <div class="news-row" style="align-items: flex-start;">
-                            <div style="flex-grow:1;">
-                                <span class="impact-dot impact-{{ n.impact }}"></span>
-                                <a href="{{ n.url }}" target="_blank" class="text-white text-decoration-none" style="font-size:0.85rem;">
-                                    {{ n.title }}
-                                </a>
-                                <div class="c-dim" style="font-size:0.7rem; margin-top:2px;">
-                                    <span class="badge bg-dark border border-secondary">{{ n.tag }}</span>
-                                    {{ n.time.strftime('%H:%M') }}
-                                </div>
-                            </div>
+                <div class="sec-h"><i class="bi bi-file-earmark-bar-graph"></i> تقارير COT و CPI</div>
+                
+                <div class="mb-3 bg-dark p-3 rounded border border-secondary">
+                    <h6 class="text-info mb-2 fw-bold">CPI (التضخم الأمريكي)</h6>
+                    {% if cpi_data %}
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="c-dim small">الفترة: {{ cpi_data.period }}</span>
+                            <span class="fs-4 fw-bold text-white">{{ cpi_data.cpi_value }}</span>
                         </div>
-                        {% endfor %}
+                        <div class="small p-2 rounded {% if cpi_data.cpi_value > 3.0 %}bg-danger bg-opacity-25 c-neg{% else %}bg-success bg-opacity-25 c-pos{% endif %}">
+                            {% if cpi_data.cpi_value > 3.0 %}
+                                <i class="bi bi-exclamation-triangle"></i> <b>التحليل:</b> تضخم مرتفع. ضغط على الفيدرالي لرفع الفائدة (إيجابي للدولار / سلبي للذهب).
+                            {% else %}
+                                <i class="bi bi-check-circle"></i> <b>التحليل:</b> تضخم مستقر. يسمح بسياسة نقدية مرنة (سلبي للدولار / إيجابي للذهب).
+                            {% endif %}
+                        </div>
                     {% else %}
-                        <div class="c-dim small text-center py-2">{{ t.no_news }}</div>
+                        <div class="c-dim small">لا تتوفر بيانات CPI حالياً.</div>
+                    {% endif %}
+                </div>
+
+                <div>
+                    <h6 class="text-info mb-2 fw-bold">COT (مراكز المؤسسات الكبرى)</h6>
+                    {% if cot_reports %}
+                        <div class="table-responsive rounded border border-secondary">
+                            <table class="table table-dark table-sm mb-0 text-center" style="font-size:.75rem;">
+                                <thead class="bg-secondary bg-opacity-25">
+                                    <tr>
+                                        <th class="text-start">الأصل</th>
+                                        <th>صافي المراكز</th>
+                                        <th>التحيز (Bias)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for cot in cot_reports %}
+                                    <tr>
+                                        <td class="text-start fw-bold text-white">
+                                            {{ cot.market.replace(' - CHICAGO BOARD OF TRADE', '').replace(' - NEW YORK MERCANTILE EXCHANGE', '').replace(' - ICE FUTURES U.S.', '') }}
+                                        </td>
+                                        <td class="{% if cot.noncomm_net and cot.noncomm_net > 0 %}c-pos{% else %}c-neg{% endif %} fw-bold">
+                                            {{ '{:,.0f}'.format(cot.noncomm_net) if cot.noncomm_net else '—' }}
+                                        </td>
+                                        <td>
+                                            {% if cot.noncomm_net and cot.noncomm_net > 0 %}
+                                                <span class="badge bg-success">صعودي ↑</span>
+                                            {% else %}
+                                                <span class="badge bg-danger">هبوطي ↓</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="c-dim small">لا تتوفر بيانات COT حالياً.</div>
                     {% endif %}
                 </div>
             </div>
 
+            <div class="card-box">
+                <div class="sec-h">
+                    <i class="bi bi-newspaper"></i>
+                    <span data-i18n="news">الأخبار اللحظية</span>
+                </div>
+                {% if news %}
+                    {% for n in news[:6] %}
+                    <div class="d-flex justify-content-between border-bottom border-secondary py-2 small"
+                         style="border-style:dashed !important;">
+                        <div style="flex-grow:1;">
+                            <span class="badge {% if n.impact == 'high' %}bg-danger{% else %}bg-warning text-dark{% endif %}"
+                                  style="font-size:.55rem;">●</span>
+                            <a href="{{ n.url }}" target="_blank" title="{{ n.title }}"
+                               class="news-link">{{ n.title[:60] }}{% if n.title|length > 60 %}…{% endif %}</a>
+                        </div>
+                        <div class="c-dim ms-2">{{ n.time.strftime('%H:%M') }}</div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="c-dim small" data-i18n="no_news">لا توجد أخبار.</div>
+                {% endif %}
+            </div>
+
             <!-- Strategy Performance -->
             <div class="card-box">
-                <div class="sec-h"><i class="bi bi-trophy"></i> {{ t.strategies }}</div>
+                <div class="sec-h"><i class="bi bi-trophy"></i> <span data-i18n="strategies">أداء الاستراتيجيات (التعلم الذاتي)</span></div>
                 <div class="table-responsive">
-                    <table class="table table-sm text-white mb-0" style="font-size: 0.85rem;">
+                    <table class="table table-dark table-sm mb-0" style="font-size: 0.75rem;">
                         <thead>
                             <tr style="border-bottom: 1px solid var(--border);">
-                                <th class="c-dim border-0">{{ t.strategies }}</th>
-                                <th class="c-dim border-0 text-center">W</th>
-                                <th class="c-dim border-0 text-center">W/L</th>
-                                <th class="c-dim border-0 text-end">{{ t.win_rate }}</th>
+                                <th class="c-dim border-0" data-i18n="strat_name">الاستراتيجية</th>
+                                <th class="c-dim border-0 text-center" data-i18n="strat_weight">الوزن</th>
+                                <th class="c-dim border-0 text-center" data-i18n="strat_wl">W/L</th>
+                                <th class="c-dim border-0 text-end" data-i18n="strat_winrate">النجاح</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for s in strategy_stats %}
                             <tr style="border-bottom: 1px dashed var(--border);">
-                                <td class="border-0">{{ s.strategy }}</td>
+                                <td class="border-0 text-white fw-bold">{{ s.strategy }}</td>
                                 <td class="border-0 text-center">
-                                    <span class="badge" style="background:var(--bg-0); border:1px solid var(--border);">{{ '%.2f'|format(s.weight) }}</span>
+                                    <div class="d-flex align-items-center justify-content-center gap-1">
+                                        <div class="progress-custom" style="width: 40px; background: #21262d; height: 4px; border-radius: 2px;">
+                                            <div class="bar" style="width: {{ (s.weight / 1.5 * 100)|round(0) }}%; height: 100%; background: var(--cyan); border-radius: 2px;"></div>
+                                        </div>
+                                        <span class="c-dim">{{ '%.2f'|format(s.weight) }}</span>
+                                    </div>
                                 </td>
                                 <td class="border-0 text-center c-dim">{{ s.wins }}/{{ s.losses }}</td>
-                                <td class="border-0 text-end {% if s.win_rate >= 50 %}c-pos{% else %}c-neg{% endif %} fw-bold">
+                                <td class="border-0 text-end {% if s.win_rate >= 50 %}c-pos{% elif s.win_rate > 0 %}c-neg{% else %}c-dim{% endif %} fw-bold">
                                     {{ '%.1f'|format(s.win_rate) }}%
                                 </td>
                             </tr>
-                            {% else %}
-                            <tr><td colspan="4" class="text-center c-dim py-3 border-0">{{ t.no_strat }}</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -629,122 +500,294 @@
 
             <!-- Settings -->
             <div class="card-box">
-                <div class="sec-h"><i class="bi bi-gear"></i> {{ t.settings }}</div>
+                <div class="sec-h"><i class="bi bi-gear"></i> <span data-i18n="settings">الإعدادات</span></div>
 
                 <div class="row g-2">
                     <div class="col-6">
-                        <label class="form-label">Capital ($)</label>
+                        <label class="form-label" data-i18n="capital">رأس المال ($)</label>
                         <input type="number" class="form-control" id="set-capital" value="{{ settings.capital }}" step="0.01">
                     </div>
                     <div class="col-6">
-                        <label class="form-label">Risk (%)</label>
+                        <label class="form-label" data-i18n="risk">المخاطرة (%)</label>
                         <input type="number" class="form-control" id="set-risk" value="{{ settings.risk_per_trade_pct }}" step="0.1" max="2">
                     </div>
                     <div class="col-6">
-                        <label class="form-label">Min Score</label>
+                        <label class="form-label" data-i18n="min_score">أدنى Score</label>
                         <input type="number" class="form-control" id="set-score" value="{{ settings.min_score }}" step="0.01">
                     </div>
                     <div class="col-6">
-                        <label class="form-label">Interval (s)</label>
+                        <label class="form-label" data-i18n="interval">فاصل التحليل (ث)</label>
                         <input type="number" class="form-control" id="set-interval" value="{{ settings.analysis_interval_sec }}" step="10">
                     </div>
                 </div>
 
-                <label class="form-label mt-3">Style</label>
+                <label class="form-label mt-3" data-i18n="style">نوع الصفقة</label>
                 <select class="form-select" id="set-style">
                     <option value="both" {% if settings.style_mode == 'both' %}selected{% endif %}>Both (Swing + Scalping)</option>
                     <option value="swing" {% if settings.style_mode == 'swing' %}selected{% endif %}>Swing</option>
                     <option value="scalping" {% if settings.style_mode == 'scalping' %}selected{% endif %}>Scalping</option>
                 </select>
 
-                <label class="form-label mt-3">Timeframes</label>
+                <label class="form-label mt-3" data-i18n="timeframes">الفريمات الزمنية</label>
                 <div id="tf-chips">
                     {% for tf in ['1H','4H','15M','5M','1M'] %}
                     <span class="tf-chip {% if tf in settings.timeframes %}active{% endif %}" data-tf="{{ tf }}">{{ tf }}</span>
                     {% endfor %}
                 </div>
 
-                <label class="form-label mt-3">Auto-generate</label>
+                <label class="form-label mt-3" data-i18n="auto_gen">توليد تلقائي</label>
                 <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="set-auto" {% if settings.auto_generate_signals %}checked{% endif %}>
-                    <label class="form-check-label small c-dim">Auto analysis</label>
+                    <label class="form-check-label small c-dim" data-i18n="auto_analysis">تفعيل التحليل التلقائي</label>
                 </div>
 
                 <button class="btn btn-approve w-100 mt-3" onclick="saveSettings()">
-                    <i class="bi bi-save"></i> {{ t.save }}
+                    <i class="bi bi-save"></i> <span data-i18n="save">حفظ الإعدادات</span>
                 </button>
             </div>
         </div>
     </div>
 </div>
 
-<footer>
-    <div class="credit"><i class="bi bi-code-slash"></i> Engineer Abdulelah Sadiq</div>
-    <div class="c-dim small mt-1">المهندس عبد الإله صادق</div>
-</footer>
-
-<!-- Bootstrap JS (مطلوب لدروب-داون اللغة) -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-async function api(url, method = 'GET', body = null) {
-    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+const i18n = {
+    ar: {
+        market_open: "السوق مفتوح",
+        market_closed: "السوق مغلق",
+        session: "الجلسة",
+        liquidity: "السيولة",
+        live_prices: "الأسعار الحية",
+        signals: "توصيات ICT",
+        analyze_now: "تحليل الآن",
+        no_signals: "لا توصيات حالياً",
+        open_pos: "المراكز المفتوحة",
+        fundamental: "التحليل الأساسي",
+        news: "الأخبار اللحظية",
+        strategies: "أداء الاستراتيجيات (التعلم الذاتي)",
+        strat_name: "الاستراتيجية",
+        strat_weight: "الوزن",
+        strat_wl: "W/L",
+        strat_winrate: "النجاح",
+        balance: "الرصيد",
+        pending: "معلقة",
+        risk: "مخاطرة",
+        pnl: "P&L",
+        win_rate: "نجاح",
+        entry: "الدخول",
+        sl: "وقف الخسارة",
+        tp: "الهدف",
+        approve: "موافقة وتنفيذ",
+        reject: "رفض",
+        score: "Score",
+        strategy: "الاستراتيجية",
+        weight: "الوزن",
+        no_strat: "لا توجد بيانات كافية بعد.",
+        no_news: "لا توجد أخبار.",
+        confirm_execute: "تأكيد تنفيذ الصفقة؟",
+        executed_success: "تم التنفيذ بنجاح",
+        rejected_msg: "مرفوض",
+        analysis_done: "تم التحليل",
+        generated: "تم توليدها",
+        rejected: "مرفوضة",
+        settings: "الإعدادات",
+        capital: "رأس المال ($)",
+        min_score: "أدنى Score",
+        interval: "فاصل التحليل (ث)",
+        style: "نوع الصفقة",
+        timeframes: "الفريمات الزمنية",
+        auto_gen: "توليد تلقائي",
+        auto_analysis: "تفعيل التحليل التلقائي",
+        save: "حفظ الإعدادات"
+    },
+    en: {
+        market_open: "Market Open",
+        market_closed: "Market Closed",
+        session: "Session",
+        liquidity: "Liquidity",
+        live_prices: "Live Prices",
+        signals: "ICT Signals",
+        analyze_now: "Analyze Now",
+        no_signals: "No signals currently",
+        open_pos: "Open Positions",
+        fundamental: "Fundamental Bias",
+        news: "Live News",
+        strategies: "Strategy Performance",
+        strat_name: "Strategy",
+        strat_weight: "Weight",
+        strat_wl: "W/L",
+        strat_winrate: "Win Rate",
+        balance: "Balance",
+        pending: "Pending",
+        risk: "Risk",
+        pnl: "P&L",
+        win_rate: "Win Rate",
+        entry: "Entry",
+        sl: "Stop Loss",
+        tp: "Target",
+        approve: "Approve & Execute",
+        reject: "Reject",
+        score: "Score",
+        strategy: "Strategy",
+        weight: "Weight",
+        no_strat: "Not enough data yet.",
+        no_news: "No recent news.",
+        confirm_execute: "Confirm trade execution?",
+        executed_success: "Executed successfully",
+        rejected_msg: "Rejected",
+        analysis_done: "Analysis complete",
+        generated: "Generated",
+        rejected: "Rejected",
+        settings: "Settings",
+        capital: "Capital ($)",
+        min_score: "Min Score",
+        interval: "Interval (s)",
+        style: "Style",
+        timeframes: "Timeframes",
+        auto_gen: "Auto-generate",
+        auto_analysis: "Enable auto analysis",
+        save: "Save Settings"
+    }
+};
+
+let currentLang = localStorage.getItem("lang") || "ar";
+
+function applyLanguage() {
+    const isRtl = currentLang === "ar";
+
+    document.documentElement.setAttribute("lang", currentLang);
+    document.documentElement.setAttribute("dir", isRtl ? "rtl" : "ltr");
+
+    const bs = document.getElementById("bootstrap-css");
+    if (bs) {
+        bs.href = isRtl
+            ? "https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css"
+            : "https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css";
+    }
+
+    const btnTxt = document.getElementById("lang-btn-text");
+    if (btnTxt) btnTxt.innerText = isRtl ? "EN" : "AR";
+
+    document.querySelectorAll("[data-i18n]").forEach(function (el) {
+        const key = el.getAttribute("data-i18n");
+        const dict = i18n[currentLang] || i18n.ar;
+        if (dict[key]) el.innerText = dict[key];
+    });
+}
+
+function toggleLanguage() {
+    currentLang = currentLang === "ar" ? "en" : "ar";
+    localStorage.setItem("lang", currentLang);
+    applyLanguage();
+}
+
+async function api(url, method, body) {
+    method = method || "GET";
+    const opts = { method: method, headers: { "Content-Type": "application/json" } };
     if (body) opts.body = JSON.stringify(body);
     const r = await fetch(url, opts);
     return r.json();
 }
 
 async function approveSignal(uid) {
-    if (!confirm('{{ t.approve }}?')) return;
-    const res = await api('/api/approve/' + uid, 'POST');
-    if (res.ok) { alert('OK: ' + res.ticket); location.reload(); }
-    else { alert('Error: ' + (res.error || '')); }
+    if (!confirm(i18n[currentLang].confirm_execute)) return;
+    const res = await api("/api/approve/" + uid, "POST");
+    if (res.ok) {
+        alert(i18n[currentLang].executed_success);
+        location.reload();
+    } else {
+        alert(i18n[currentLang].rejected_msg + ": " + (res.error || ""));
+    }
 }
 
 async function rejectSignal(uid) {
-    await api('/api/reject/' + uid, 'POST');
+    await api("/api/reject/" + uid, "POST");
     location.reload();
 }
 
 async function runAnalysis() {
-    const btn = event.target.closest('button');
-    const orig = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
-    const res = await api('/api/run-analysis', 'POST');
-    alert(`Generated: ${res.generated}\nRejected: ${res.rejected}\nRaw: ${res.raw_setups || 0}`);
+    const btn = event.target.closest("button");
+    if (btn) btn.disabled = true;
+    const res = await api("/api/run-analysis", "POST");
+    alert(
+        i18n[currentLang].analysis_done +
+        "\n" + i18n[currentLang].generated + ": " + res.generated +
+        "\n" + i18n[currentLang].rejected + ": " + res.rejected
+    );
     location.reload();
 }
 
-async function refreshNews() {
-    const res = await api('/api/news/refresh', 'POST');
-    if (res.ok) { alert(`+${res.count}`); location.reload(); }
-    else { alert('News fetch failed'); }
+{% if not market.is_open and market.next_open_ts %}
+function updateCountdown() {
+    const target = new Date("{{ market.next_open_ts }}").getTime();
+    const now = new Date().getTime();
+    const diff = target - now;
+    
+    if (diff <= 0) {
+        document.getElementById("countdown-timer").innerText = "جاري الافتتاح...";
+        setTimeout(() => location.reload(), 3000);
+        return;
+    }
+    
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+    
+    let str = "";
+    if (days > 0) str += days + " ي ";
+    str += hours + " س " + minutes + " د " + seconds + " ث";
+    
+    document.getElementById("countdown-timer").innerText = str;
 }
+setInterval(updateCountdown, 1000);
+updateCountdown();
+{% endif %}
 
-// --- Timeframe Filtering Logic ---
+{% if not market.is_open and market.next_open_ts %}
+function updateEmptyCountdown() {
+    const target = new Date("{{ market.next_open_ts }}").getTime();
+    const now = new Date().getTime();
+    const diff = target - now;
+    
+    const el = document.getElementById("empty-countdown");
+    if (!el) return;
+
+    if (diff <= 0) {
+        el.innerText = "جاري فتح السوق...";
+        setTimeout(() => location.reload(), 3000);
+        return;
+    }
+    
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+    
+    let str = "";
+    if (days > 0) str += days + " يوم و ";
+    str += `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    
+    el.innerText = str;
+}
+setInterval(updateEmptyCountdown, 1000);
+updateEmptyCountdown();
+{% endif %}
+
 function updateTimeframeChips() {
     const style = document.getElementById('set-style').value;
     const swingTfs = ['1H', '4H'];
     const scalpTfs = ['1M', '5M', '15M'];
-
     document.querySelectorAll('.tf-chip').forEach(chip => {
         const tf = chip.dataset.tf;
-        let show = false;
-
-        if (style === 'swing' && swingTfs.includes(tf)) show = true;
-        else if (style === 'scalping' && scalpTfs.includes(tf)) show = true;
-        else if (style === 'both' && [...swingTfs, ...scalpTfs].includes(tf)) show = true;
-
-        if (show) {
-            chip.style.display = 'inline-block';
-        } else {
-            chip.style.display = 'none';
-            chip.classList.remove('active');
-        }
+        let show = (style === 'swing' && swingTfs.includes(tf)) || 
+                   (style === 'scalping' && scalpTfs.includes(tf)) || 
+                   (style === 'both' && [...swingTfs, ...scalpTfs].includes(tf));
+        chip.style.display = show ? 'inline-block' : 'none';
+        if (!show) chip.classList.remove('active');
     });
 }
-
 document.getElementById('set-style').addEventListener('change', updateTimeframeChips);
 document.addEventListener('DOMContentLoaded', updateTimeframeChips);
 
@@ -763,20 +806,24 @@ async function saveSettings() {
         auto_generate_signals: document.getElementById('set-auto').checked,
         timeframes: tfs,
     };
-    const res = await api('/api/settings', 'POST', data);
-    if (res.ok) { alert('{{ t.save }}'); location.reload(); }
-    else { alert('Error'); }
+    const res = await fetch('/api/settings', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+    }).then(r => r.json());
+    
+    if (res.ok) { alert('تم الحفظ'); location.reload(); }
+    else { alert('فشل'); }
 }
 
-// auto refresh
-setInterval(async () => {
+document.addEventListener("DOMContentLoaded", applyLanguage);
+
+setInterval(async function () {
     try {
-        const s = await api('/api/state');
+        const s = await api("/api/state");
         if (s.pending.length !== {{ pending_signals|length }} ||
             s.open.length !== {{ open_positions|length }}) {
             location.reload();
         }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 }, 30000);
 </script>
 </body>
