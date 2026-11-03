@@ -182,10 +182,20 @@
             </div>
             
             <div class="d-flex align-items-center gap-2 flex-wrap">
+                <!-- حالة السوق -->
                 {% if market.is_open %}
                     <span class="badge bg-success"><i class="bi bi-circle-fill" style="font-size:.5rem;"></i> <span data-i18n="market_open">السوق مفتوح</span></span>
-                {% else %}
+                {% elif market.is_weekend %}
                     <span class="badge bg-danger"><i class="bi bi-circle-fill" style="font-size:.5rem;"></i> <span data-i18n="market_closed">السوق مغلق</span></span>
+                    {% if market.next_open_ts %}
+                    <span class="badge bg-dark border border-warning text-warning">
+                        <i class="bi bi-hourglass-split"></i> يفتح خلال: <span id="countdown-timer" class="fw-bold"></span>
+                    </span>
+                    {% endif %}
+                {% else %}
+                    <!-- توقف مؤقت بسبب سيولة أو انتقال جلسات -->
+                    <span class="badge bg-warning text-dark"><i class="bi bi-pause-circle"></i> توقف مؤقت</span>
+                    <span class="badge bg-secondary">السبب: {{ market.blocked_reason }}</span>
                 {% endif %}
                 
                 <span class="badge bg-secondary"><i class="bi bi-clock"></i> الجلسة: {{ market.session_name }}</span>
@@ -193,12 +203,6 @@
                 <span class="badge bg-{{ market.liq_color }} {% if market.liq_color == 'warning' %}text-dark{% endif %}">
                     <i class="bi bi-droplet-half"></i> <span data-i18n="liquidity">السيولة</span>: {{ market.liquidity }}
                 </span>
-
-                {% if not market.is_open and market.next_open_ts %}
-                <span class="badge bg-dark border border-warning text-warning">
-                    <i class="bi bi-hourglass-split"></i> يفتح خلال: <span id="countdown-timer" class="fw-bold"></span>
-                </span>
-                {% endif %}
             </div>
         </div>
 
