@@ -8,6 +8,7 @@ Sources:
   • ForexFactory JSON (public)         → Economic calendar
   • FXStreet API (optional env vars)   → FXDaily equivalent
   • Investing.com via Apify (opt env)  → Investing feed
+  • FRED API (optional FRED_API_KEY)   → US macro (CPI, Unemployment, Fed Funds)
 
 Computes per-symbol FundamentalBias ∈ [-1, +1]:
   +1 = strongly bullish, -1 = strongly bearish
@@ -490,6 +491,68 @@ class InvestingFetcher(BaseFetcher):
         return out
 
 
+# -----------------------------------------------------------------------------
+# FRED (US macro — optional)
+# -----------------------------------------------------------------------------
+class FREDFetcher(BaseFetcher):
+    """
+    Fetches US macro data from FRED (Federal Reserve Economic Data).
+
+    Requires env var:  FRED_API_KEY
+    Get a free key at: https://fred.stlouisfed.org/docs/api/api_key.html
+
+    Returns:
+        { "cpi": float, "unemployment": float, "interest_rate": float }
+        or {} when unavailable (no key, missing package, network error).
+
+    Cached for 1 hour — macro data updates slowly (monthly/weekly).
+    """
+    name = "fred"
+    cache_ttl = 3600
+
+    # FRED series IDs
+    SERIES_CPI = "CPIAUCSL"     # Consumer Price Index (all urban consumers)
+    SERIES_UNRATE = "UNRATE"    # Unemployment rate
+    SERIES_FEDFUNDS = "FEDFUNDS"  # Effective Federal Funds Rate
+
+    def __init__(self):
+        super().__init__()
+        self.api_key = os.getenv("FRED_API_KEY")
+
+    def fetch_macro(self) -> Dict[str, float]:
+        if not self.api_key:
+            return {}
+
+        cached = self._cached()
+        if cached is not None:
+            return cached
+
+        try:
+            from fredapi import Fred  # type: ignore
+        except ImportError:
+            logger.warning("fredapi not installed — skipping FRED")
+            return {}
+
+        try:
+            fred = Fred(api_key=self.api_key)
+
+            cpi = fred.get_series(self.SERIES_CPI).dropna().iloc[-1]
+            unemployment = fred.get_series(self.SERIES_UNRATE).dropna().iloc[-1]
+            rate = fred.get_series(self.SERIES_FEDFUNDS).dropna().iloc[-1]
+
+            result = {
+                "cpi": round(float(cpi), 2),
+                "unemployment": round(float(unemployment), 2),
+                "interest_rate": round(float(rate), 2),
+            }
+            self._set_cache(result)
+            return result
+        except Exception as e:
+            logger.warning("FRED API failed: %s", e)
+            # Do NOT cache the failure — retry on next call
+            return {}
+
+
 # =============================================================================
 # FUNDAMENTAL BIAS ENGINE
 # =============================================================================
@@ -504,6 +567,7 @@ class FundamentalsEngine:
         self.ff = ForexFactoryFetcher()
         self.fxstreet = FXStreetFetcher()
         self.investing = InvestingFetcher()
+        self.fred = FREDFetcher()      # 👈 جديد — بيانات FRED الماكرو
 
     # ------------------------------------------------------------------
     def all_events(self) -> List[EconomicEvent]:
@@ -650,6 +714,7 @@ class FundamentalsEngine:
                 "cpi_bls": cpi is not None,
                 "fxstreet": bool(os.getenv("FXSTREET_CLIENT_ID")),
                 "investing": bool(os.getenv("APIFY_TOKEN")),
+                "fred": bool(os.getenv("FRED_API_KEY")),   # 👈 جديد
             },
             "computed_at": utcnow().isoformat(),
         }
