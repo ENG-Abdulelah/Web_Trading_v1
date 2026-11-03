@@ -3,7 +3,7 @@
 ICT/SMC Analysis Engine — 20 strategies on real OHLCV data.
 NO random or synthetic data used. Uses yfinance for real candles,
 ForexFactory JSON + ForexLive RSS for real news.
-Live prices priority: WebSocket PRICE_STORE → TwelveData → AlphaVantage → Yahoo.
+Live prices: TwelveData (15s cache).
 
 Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
 """
@@ -22,12 +22,6 @@ import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
-
-# 👈 WebSocket price store (اختياري — لن يكسر التطبيق لو غير موجود)
-try:
-    from price_streamer import PRICE_STORE  # type: ignore
-except Exception:  # noqa: BLE001
-    PRICE_STORE: Dict[str, Dict[str, Any]] = {}
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
@@ -1094,144 +1088,60 @@ def analyze_symbol(symbol: str, timeframe: str, style: str,
 
 
 # =============================================================================
-# BIQUOTE SAFE LOADER (optional)
-# =============================================================================
-def get_biquote_instance():
-    """محاولة آمنة لتحميل biquote دون تعليق السيرفر"""
-    try:
-        from biquote import Biquote
-        return Biquote()
-    except Exception as e:
-        logger.debug(f"biquote not available on this OS: {e}")
-        return None
-
-
-# =============================================================================
-# LIVE PRICES (WebSocket → TwelveData → AlphaVantage → Yahoo)
+# LIVE PRICES (TwelveData — 15s cache)
 # =============================================================================
 _price_cache: Dict[str, Dict[str, Any]] = {}
 _price_cache_time: float = 0.0
 
 
 def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
-    """
-    Priority order:
-      1. WebSocket PRICE_STORE (real-time, < 60s fresh)
-      2. TwelveData (cached 30s)
-      3. AlphaVantage
-      4. Yahoo/Stooq
-    """
     global _price_cache, _price_cache_time
     now = _time.time()
 
-    # ------------------------------------------------------------------
-    # 1. الأولوية: WebSocket (لحظي)
-    # ------------------------------------------------------------------
-    live_data: Dict[str, Dict[str, Any]] = {}
-    for sym in symbols:
-        entry = PRICE_STORE.get(sym)
-        if not entry:
-            continue
-        # نتحقق أن السعر حديث (أقل من 60 ثانية)
-        if now - entry.get("timestamp", 0) < 60:
-            live_data[sym] = {
-                "price": entry.get("price"),
-                "change_pct": entry.get("change_pct", 0.0),
-            }
-
-    if live_data:
-        return live_data
-
-    # ------------------------------------------------------------------
-    # 2. إذا لم تصل البيانات بعد (أول ثانية)، استخدم الكاش المؤقت
-    # ------------------------------------------------------------------
-    if now - _price_cache_time < 30 and _price_cache:
+    # تحديث كل 15 ثانية فقط لتجنب حظر TwelveData
+    if now - _price_cache_time < 15 and _price_cache:
         return _price_cache
 
-    prices: Dict[str, Dict[str, Any]] = {}
-
-    # ------------------------------------------------------------------
-    # 3. TwelveData (خطة بديلة سريعة)
-    # ------------------------------------------------------------------
     td_key = os.getenv("TWELVE_DATA_API_KEY")
-    if td_key:
-        td_syms = {
-            "XAU/USD": "XAU/USD", "XAG/USD": "XAG/USD", "WTI/USD": "WTI/USD",
-            "EUR/USD": "EUR/USD", "GBP/USD": "GBP/USD", "USD/JPY": "USD/JPY", "DXY": "DXY"
-        }
-        try:
-            sym_str = ",".join([td_syms[s] for s in symbols if s in td_syms])
-            url = f"https://api.twelvedata.com/quote?symbol={sym_str}&apikey={td_key}"
-            r = requests.get(url, timeout=8).json()
+    if not td_key:
+        logger.warning("TWELVE_DATA_API_KEY is missing!")
+        return _price_cache
 
-            if "code" not in r:  # لا يوجد خطأ
-                for sym, td_sym in td_syms.items():
-                    if td_sym in r:
-                        data = r[td_sym]
-                        prices[sym] = {
-                            "price": round(float(data.get("close", 0)), 5),
+    # رموز TwelveData الفورية (تطابق MT5)
+    td_syms = {
+        "XAU/USD": "XAU/USD", "XAG/USD": "XAG/USD", "WTI/USD": "WTI/USD",
+        "EUR/USD": "EUR/USD", "GBP/USD": "GBP/USD", "USD/JPY": "USD/JPY",
+        "DXY": "DXY"
+    }
+
+    sym_str = ",".join([td_syms[s] for s in symbols if s in td_syms])
+    url = f"https://api.twelvedata.com/quote?symbol={sym_str}&apikey={td_key}"
+
+    try:
+        r = requests.get(url, timeout=10).json()
+        # التحقق من عدم وجود خطأ في الاستجابة
+        if isinstance(r, dict) and "code" not in r:
+            # إذا كان الرمز واحداً، ترجع TwelveData استجابة مسطحة، وإذا كانت متعددة ترجع قاموس
+            results = r if len(symbols) > 1 else {td_syms[symbols[0]]: r}
+
+            for sym, td_sym in td_syms.items():
+                if td_sym in results:
+                    data = results[td_sym]
+                    cur_price = float(data.get("close", 0))
+                    if cur_price > 0:
+                        _price_cache[sym] = {
+                            "price": round(cur_price, 5),
                             "change_pct": round(float(data.get("percent_change", 0)), 2)
                         }
-                if prices:
-                    _price_cache, _price_cache_time = prices, now
-                    return prices
-        except Exception as e:
-            logger.warning(f"TwelveData failed: {e}")
+            _price_cache_time = now
+            return _price_cache
+        else:
+            logger.warning(f"TwelveData API limit reached or error: {r}")
+            return _price_cache
 
-    # ------------------------------------------------------------------
-    # 4. Alpha Vantage (احتياطي)
-    # ------------------------------------------------------------------
-    av_key = os.getenv("ALPHA_VANTAGE_API_KEY")
-    if av_key and not prices:
-        av_syms = {
-            "XAU/USD": ("XAU", "USD"), "EUR/USD": ("EUR", "USD"),
-            "GBP/USD": ("GBP", "USD"), "USD/JPY": ("USD", "JPY")
-        }
-        for sym in symbols:
-            if sym in av_syms:
-                f, t = av_syms[sym]
-                try:
-                    url = f"https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency={f}&to_currency={t}&apikey={av_key}"
-                    r = requests.get(url, timeout=5).json()
-                    rate = r.get("Realtime Currency Exchange Rate", {}).get("5. Exchange Rate")
-                    if rate:
-                        prices[sym] = {"price": round(float(rate), 5), "change_pct": 0.0}
-                except Exception:
-                    pass
-        if prices:
-            _price_cache, _price_cache_time = prices, now
-            return prices
-
-    # ------------------------------------------------------------------
-    # 5. Yahoo/Stooq (خط أخير)
-    # ------------------------------------------------------------------
-    yahoo_syms = {
-        "XAU/USD": "GC=F", "XAG/USD": "SI=F", "WTI/USD": "CL=F",
-        "EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X",
-        "DXY": "DX-Y.NYB"
-    }
-    for symbol in symbols:
-        ticker = yahoo_syms.get(symbol)
-        if not ticker:
-            continue
-        try:
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=2d"
-            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-            if r.status_code == 200:
-                res = r.json().get("chart", {}).get("result", [])
-                if res:
-                    meta = res[0].get("meta", {})
-                    cur, prev = meta.get("regularMarketPrice"), meta.get("chartPreviousClose")
-                    if cur and prev:
-                        prices[symbol] = {
-                            "price": round(cur, 5),
-                            "change_pct": round(((cur - prev) / prev * 100), 2)
-                        }
-        except Exception:
-            pass
-
-    _price_cache, _price_cache_time = prices, now
-    return prices
+    except Exception as e:
+        logger.warning(f"TwelveData fetch failed: {e}")
+        return _price_cache
 
 
 # =============================================================================
