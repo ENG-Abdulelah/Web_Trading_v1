@@ -2,7 +2,7 @@
 """
 ICT/SMC Analysis Engine — 20 strategies on real OHLCV data.
 NO random or synthetic data used. Uses yfinance for real candles,
-ForexFactory JSON for real news.
+ForexFactory JSON + ForexLive RSS for real news.
 
 Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
 """
@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import threading
 import time as _time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta, timezone
@@ -75,15 +76,22 @@ STRATEGY_NAMES = [
 # DATA FETCHERS
 # =============================================================================
 class CandleFetcher:
-    """Fetches real OHLCV data from yfinance with in-memory caching."""
+    """Fetches real OHLCV data from yfinance with retry + cache."""
 
-    def __init__(self, cache_ttl_sec: int = 120):
+    def __init__(self, cache_ttl_sec: int = 900):    # 👈 زيادة التخزين المؤقت إلى 15 دقيقة
         self._cache: Dict[str, tuple] = {}
         self._ttl = cache_ttl_sec
+        self._fail_cache: Dict[str, float] = {}
 
     def get(self, symbol: str, timeframe: str) -> Optional[pd.DataFrame]:
         key = f"{symbol}:{timeframe}"
         now = _time.time()
+
+        # إذا فشل مؤخراً، لا تحاول لمدة 15 دقيقة
+        if key in self._fail_cache:
+            if now - self._fail_cache[key] < 900:
+                return None
+
         if key in self._cache:
             ts, df = self._cache[key]
             if now - ts < self._ttl:
@@ -94,53 +102,72 @@ class CandleFetcher:
             return None
         interval, period = TIMEFRAME_MAP.get(timeframe, ("1h", "1mo"))
 
-        try:
-            ticker = yf.Ticker(yf_symbol)
-            df = ticker.history(period=period, interval=interval, auto_adjust=False)
-        except Exception as e:
-            logger.warning("yfinance fetch failed %s@%s: %s", symbol, timeframe, e)
-            return None
+        for attempt in range(2):  # محاولتان فقط
+            try:
+                # استخدام yf.download بدلاً من Ticker (أقل استهلاكاً)
+                df = yf.download(yf_symbol, period=period, interval=interval, progress=False)
+                if df is not None and not df.empty:
+                    df = df.rename(columns={"Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
+                    df = df[["open", "high", "low", "close", "volume"]].copy()
+                    df.index = pd.to_datetime(df.index, utc=True)
+                    df = df[~df.index.duplicated(keep="last")].sort_index()
+                    self._cache[key] = (now, df)
+                    self._fail_cache.pop(key, None)
+                    return df
+            except Exception as e:
+                logger.warning("yfinance attempt %d %s@%s: %s", attempt + 1, symbol, timeframe, e)
+                _time.sleep(2.0)
 
-        if df is None or df.empty:
-            return None
-
-        df = df.rename(columns={
-            "Open": "open", "High": "high", "Low": "low",
-            "Close": "close", "Volume": "volume"
-        })
-        df = df[["open", "high", "low", "close", "volume"]].copy()
-        df.index = pd.to_datetime(df.index, utc=True)
-        df = df[~df.index.duplicated(keep="last")].sort_index()
-
-        self._cache[key] = (now, df)
-        return df
+        self._fail_cache[key] = now
+        return None
 
 
 class NewsFetcher:
-    """Fetches real economic calendar events from ForexFactory JSON endpoint."""
-
+    """
+    Fetches real economic calendar events.
+    Priority: ForexFactory → ForexLive RSS (fallback)
+    """
     FF_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+    RSS_URL = "https://www.forexlive.com/feed/news"
 
-    def __init__(self, cache_ttl_sec: int = 90):
+    def __init__(self, cache_ttl_sec: int = 1800):  # 30 دقيقة cache
         self._cache: List[Dict[str, Any]] = []
         self._last_fetch: float = 0.0
+        self._last_fail: float = 0.0
         self._ttl = cache_ttl_sec
+        self._fail_cooldown = 300  # 👈 5 دقائق فقط (بدل الساعة)
+        self._lock = threading.Lock()
 
     def fetch(self) -> List[Dict[str, Any]]:
-        now = _time.time()
-        if now - self._last_fetch < self._ttl:
-            return list(self._cache)
-            
-        try:
-            r = requests.get(self.FF_URL, timeout=10,
-                             headers={"User-Agent": "Mozilla/5.0"})
-            r.raise_for_status()
-            raw = r.json()
-        except Exception as e:
-            logger.warning("ForexFactory fetch failed: %s", e)
-            self._last_fetch = now
-            return list(self._cache)
+        with self._lock:
+            now = _time.time()
 
+            # إذا فشل مؤخراً (خلال 5 دقائق)، جرّب RSS بدلاً منه
+            if now - self._last_fail < self._fail_cooldown:
+                return self._fetch_rss()
+
+            if now - self._last_fetch < self._ttl and self._cache:
+                return list(self._cache)
+
+            # 1) محاولة ForexFactory
+            try:
+                r = requests.get(self.FF_URL, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+                r.raise_for_status()
+                raw = r.json()
+                out = self._parse_ff(raw)
+                if out:
+                    self._cache = out
+                    self._last_fetch = now
+                    return out
+            except Exception as e:
+                logger.warning("ForexFactory failed (429/network): %s — switching to RSS", e)
+                self._last_fail = now
+
+            # 2) Fallback: RSS
+            return self._fetch_rss()
+
+    def _parse_ff(self, raw: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Parse ForexFactory JSON."""
         out: List[Dict[str, Any]] = []
         for item in raw or []:
             try:
@@ -160,14 +187,49 @@ class NewsFetcher:
                 "previous": item.get("previous", ""),
                 "actual": item.get("actual", ""),
             })
-        self._cache = out
-        self._last_fetch = now
-        return list(out)
+        return out
 
-    def high_impact_within(self, minutes_before: int = 30,
+    def _fetch_rss(self) -> List[Dict[str, Any]]:
+        """Fallback: ForexLive RSS — works always, no API key."""
+        cached = self._cache if self._cache else []
+        try:
+            import feedparser
+            feed = feedparser.parse(self.RSS_URL)
+            out: List[Dict[str, Any]] = []
+            for entry in feed.entries[:15]:
+                try:
+                    dt = pd.to_datetime(entry.published, utc=True).to_pydatetime()
+                except Exception:
+                    dt = utcnow()
+
+                title_lower = entry.title.lower()
+                is_geo = any(w in title_lower for w in
+                             ["war", "sanction", "conflict", "military", "attack", "iran", "israel", "russia"])
+                is_high = any(w in title_lower for w in
+                              ["fed", "cpi", "nfp", "rate", "inflation", "employment", "gdp"])
+
+                impact = "high" if (is_geo or is_high) else "medium"
+
+                out.append({
+                    "source": "forexlive",
+                    "title": entry.title,
+                    "currency": "USD",
+                    "impact": impact,
+                    "event_time": dt.isoformat(),
+                    "forecast": "",
+                    "previous": "",
+                    "actual": "",
+                    "url": entry.link,
+                })
+            return out if out else cached
+        except Exception as e:
+            logger.debug("RSS fallback failed: %s", e)
+            return cached
+
+    def high_impact_within(self, minutes_before: int = 5,
                            minutes_after: int = 10,
                            now: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
-        """Returns the nearest high-impact event currently in blackout window."""
+        """Return nearest high-impact event in blackout window."""
         now = now or utcnow()
         events = self.fetch()
         for e in events:
@@ -175,10 +237,10 @@ class NewsFetcher:
                 continue
             try:
                 ev_dt = datetime.fromisoformat(e["event_time"])
+                if ev_dt.tzinfo is None:
+                    ev_dt = ev_dt.replace(tzinfo=timezone.utc)
             except Exception:
                 continue
-            if ev_dt.tzinfo is None:
-                ev_dt = ev_dt.replace(tzinfo=timezone.utc)
             start = ev_dt - timedelta(minutes=minutes_before)
             end = ev_dt + timedelta(minutes=minutes_after)
             if start <= now <= end:
