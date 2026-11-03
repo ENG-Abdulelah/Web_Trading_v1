@@ -1087,6 +1087,19 @@ def analyze_symbol(symbol: str, timeframe: str, style: str,
 
 
 # =============================================================================
+# BIQUOTE SAFE LOADER (optional)
+# =============================================================================
+def get_biquote_instance():
+    """محاولة آمنة لتحميل biquote دون تعليق السيرفر"""
+    try:
+        from biquote import Biquote
+        return Biquote()
+    except Exception as e:
+        logger.debug(f"biquote not available on this OS: {e}")
+        return None
+
+
+# =============================================================================
 # LIVE PRICES (TwelveData → AlphaVantage → Yahoo/Stooq)
 # =============================================================================
 _price_cache: Dict[str, Dict[str, Any]] = {}
