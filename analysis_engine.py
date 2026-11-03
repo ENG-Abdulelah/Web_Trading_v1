@@ -87,7 +87,6 @@ class CandleFetcher:
         key = f"{symbol}:{timeframe}"
         now = _time.time()
 
-        # إذا فشل مؤخراً، لا تحاول لمدة 15 دقيقة
         if key in self._fail_cache:
             if now - self._fail_cache[key] < 900:
                 return None
@@ -102,15 +101,20 @@ class CandleFetcher:
             return None
         interval, period = TIMEFRAME_MAP.get(timeframe, ("1h", "1mo"))
 
-        for attempt in range(2):  # محاولتان فقط
+        for attempt in range(2):
             try:
-                # استخدام yf.download بدلاً من Ticker (أقل استهلاكاً)
-                df = yf.download(yf_symbol, period=period, interval=interval, progress=False)
+                # 👈 إضافة auto_adjust=False لإزالة التحذير
+                df = yf.download(yf_symbol, period=period, interval=interval, progress=False, auto_adjust=False)
                 if df is not None and not df.empty:
+                    # 👈 السطر السحري: إذا كانت الأعمدة متعددة المستويات، اجعلها مستوى واحد
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.get_level_values(0)
+
                     df = df.rename(columns={"Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
                     df = df[["open", "high", "low", "close", "volume"]].copy()
                     df.index = pd.to_datetime(df.index, utc=True)
                     df = df[~df.index.duplicated(keep="last")].sort_index()
+
                     self._cache[key] = (now, df)
                     self._fail_cache.pop(key, None)
                     return df
@@ -287,12 +291,53 @@ class ICTDetectors:
     def __init__(self, df: pd.DataFrame, atr_series: pd.Series,
                  symbol: str, timeframe: str, style: str,
                  filters: Optional[Dict[str, float]] = None):
+        # 👈 تأمين: تسطيح MultiIndex إن وُجد قبل أي معالجة
+        if isinstance(df.columns, pd.MultiIndex):
+            df = df.copy()
+            df.columns = df.columns.get_level_values(0)
+            df = df.rename(columns={"Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
+
         self.df = df
         self.atr = atr_series
         self.symbol = symbol
         self.timeframe = timeframe
         self.style = style
         self.filters = filters or {}
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _prepare(df: pd.DataFrame) -> pd.DataFrame:
+        required = {"open", "high", "low", "close"}
+        missing = required - set(df.columns)
+
+        # 👈 إضافة تأمينية: إذا كانت الأعمدة متعددة المستويات قم بتسطيحها
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+            missing = required - set(df.columns)
+
+        if missing:
+            raise ValueError(f"Missing OHLC columns: {missing}")
+
+        df = df.copy()
+
+        if "timestamp" not in df.columns:
+            if isinstance(df.index, pd.DatetimeIndex):
+                df["timestamp"] = df.index
+            else:
+                raise ValueError("DataFrame must have a 'timestamp' column or a DatetimeIndex")
+
+        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+        df = df.sort_values("timestamp").reset_index(drop=True)
+
+        if "volume" not in df.columns:
+            df["volume"] = 0.0
+
+        for col in ("open", "high", "low", "close", "volume"):
+            # 👈 استخدام .astype(float) لضمان تحويل الأرقام بدقة بدون تحذيرات
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype(float)
+
+        df = df.dropna(subset=["open", "high", "low", "close"]).reset_index(drop=True)
+        return df
 
     # ------------------------------------------------------------------
     def _setup(self, strategy: str, direction: str, entry: float,
