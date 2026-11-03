@@ -3,7 +3,8 @@
 Web Trading Bot — Personal Trading Analyst (Flask)
 Real market analysis, ICT×20, News guard (5/10), Fundamental Bias, TimeMachine,
 Risk gates, Trailing/Breakeven/Partial TP1, Weekend flatten.
-+ DXY, Live RSS News, i18n (AR/EN), COT (filtered), CPI, Liquidity/Session snapshot.
++ DXY, Live RSS News, i18n (AR/EN), COT (filtered), CPI, Liquidity/Session snapshot,
++ High-impact Economic Calendar news + FRED macro data.
 
 Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
 """
@@ -16,7 +17,7 @@ import time
 import uuid
 
 import feedparser                       # Live RSS
-import pandas as pd                     # fetch_live_news
+import pandas as pd                     # fetch_live_news + calendar time parsing
 
 from analysis_engine import (
     NewsFetcher, SYMBOL_SPECS, analyze_symbol,
@@ -34,6 +35,12 @@ from fundamentals import get_engine as get_fundamentals_engine
 from risk_manager import RiskManager, RiskConfig
 from session_guard import SessionGuard
 from timemachine import TimeMachine
+
+# 👇 مصدر التقويم الاقتصادي (BigQuery wrapper) — عدّل المسار لو مختلف عندك
+try:
+    from economic_calendar import bq   # noqa: F401
+except ImportError:
+    bq = None
 
 # =============================================================================
 # SETUP
@@ -186,10 +193,10 @@ def set_lang(l):
 
 
 # =============================================================================
-# LIVE NEWS (RSS)
+# LIVE NEWS (RSS) — kept as fallback
 # =============================================================================
 def fetch_live_news():
-    """Fetch live news from ForexLive / Investing.com RSS."""
+    """Fetch live news from ForexLive / Investing.com RSS (fallback)."""
     feeds = [
         "https://www.forexlive.com/feed/news",
         "https://www.investing.com/rss/news_14.rss",
@@ -225,6 +232,39 @@ def fetch_live_news():
     return news_items[:20]
 
 
+def fetch_economic_calendar_news(limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    جلب أخبار عالية التأثير فقط من التقويم الاقتصادي.
+    يرجع [] عند أي فشل (bq غير معرّف / فشل الشبكة / إلخ).
+    """
+    if bq is None:
+        logger.warning("bq (economic_calendar) غير مستورد — رجوع فارغ")
+        return []
+    try:
+        events = bq.calendar(
+            importance="high",
+            countries="US,EU,GB,JP",
+        )
+        result: List[Dict[str, Any]] = []
+        for ev in events[:limit]:
+            raw_date = ev.get("date")
+            try:
+                dt = pd.to_datetime(raw_date, utc=True).to_pydatetime()
+            except Exception:
+                dt = utcnow()
+            result.append({
+                "title": ev.get("event", "—"),
+                "time": dt,
+                "impact": "high",
+                "url": "#",
+                "tag": "Economic",
+            })
+        return result
+    except Exception as e:
+        logger.warning("economic calendar fetch failed: %s", e)
+        return []
+
+
 # =============================================================================
 # STATE HELPERS
 # =============================================================================
@@ -252,22 +292,13 @@ def today_closed() -> List[Dict[str, Any]]:
 
 
 def market_snapshot() -> Dict[str, Any]:
-    """
-    Snapshot مركّز للسوق:
-      - حظر أخبار: 5 دقائق قبل / 10 بعد
-      - الجلسة النشطة
-      - مستوى السيولة (kill zone / dead / medium)
-      - وقت افتتاح الجلسة القادمة (للعداد التنازلي)
-    """
     state = GUARD.state()
 
-    # 👈 5 دقائق قبل الخبر، 10 بعده
     news_blackout = NEWS.high_impact_within(
         minutes_before=NEWS_BEFORE_MIN,
         minutes_after=NEWS_AFTER_MIN,
     )
 
-    # 👇 السيولة
     if not state.is_open:
         liquidity, liq_color = "مغلقة", "danger"
     elif state.active_kill_zones:
@@ -277,14 +308,12 @@ def market_snapshot() -> Dict[str, Any]:
     else:
         liquidity, liq_color = "متوسطة", "warning"
 
-    # 👇 اسم الجلسة (يفضّل name_ar ثم name)
     if state.active_sessions:
         s0 = state.active_sessions[0]
         session_name = s0.get("name_ar") or s0.get("name") or "—"
     else:
         session_name = "لا توجد جلسة"
 
-    # 👇 وقت افتتاح السوق القادم (للعداد التنازلي)
     next_open_ts: Optional[str] = None
     next_session = getattr(state, "next_session", None)
     if not state.is_open and next_session:
@@ -347,7 +376,6 @@ def run_analysis_cycle() -> Dict[str, Any]:
         USER_SETTINGS["last_cycle_stats"] = stats
         return stats
 
-    # 👈 نفس نافذة الحظر 5/10
     news_event = NEWS.high_impact_within(
         minutes_before=NEWS_BEFORE_MIN,
         minutes_after=NEWS_AFTER_MIN,
@@ -365,7 +393,6 @@ def run_analysis_cycle() -> Dict[str, Any]:
         USER_SETTINGS["last_cycle_stats"] = stats
         return stats
 
-    # Refresh news
     try:
         events = fetch_news_with_fallback()
         if events:
@@ -373,7 +400,6 @@ def run_analysis_cycle() -> Dict[str, Any]:
     except Exception as e:
         logger.warning("news cache refresh failed: %s", e)
 
-    # Fundamental Bias (يشمل DXY تلقائياً)
     try:
         biases = FUNDAMENTALS.bias_for_all(SYMBOLS)
         for sym, b in biases.items():
@@ -449,7 +475,6 @@ def run_analysis_cycle() -> Dict[str, Any]:
             continue
         seen.add(key)
 
-        # Fundamental alignment
         fb = biases.get(s["symbol"])
         if fb is not None and abs(fb.bias) > 0.25:
             want_dir = "BUY" if fb.bias > 0 else "SELL"
@@ -459,7 +484,6 @@ def run_analysis_cycle() -> Dict[str, Any]:
                 continue
             s["confidence"] = min(1.0, s["confidence"] + 0.05)
 
-        # Risk gate
         decision = RISK.validate_trade(
             symbol=s["symbol"], direction=s["direction"],
             entry=s["entry"], sl=s["stop_loss"], tp=s["take_profit"],
@@ -473,7 +497,6 @@ def run_analysis_cycle() -> Dict[str, Any]:
             s["reject_reason"] = decision.reason
             continue
 
-        # TimeMachine gate
         tm_result = TIMEMACHINE.simulate(
             strategy=s["strategy"], runs=10_000, trades_per_run=20,
         )
@@ -505,7 +528,7 @@ def run_analysis_cycle() -> Dict[str, Any]:
 
 
 # =============================================================================
-# POSITION MANAGEMENT (Trailing + Breakeven + Partial TP1 + Weekend Flatten)
+# POSITION MANAGEMENT
 # =============================================================================
 def update_positions() -> None:
     from analysis_engine import CandleFetcher
@@ -741,11 +764,6 @@ def _update_filter_weight(strategy: str, realized_r: float) -> None:
 # COT / CPI FETCHERS (filtered + safe)
 # =============================================================================
 def fetch_cot_reports() -> List[Any]:
-    """
-    جلب تقارير COT مع تصفية Markets التي نتداولها فقط:
-    XAU (GOLD), XAG (SILVER), WTI (CRUDE OIL),
-    EUR (EURO FX), GBP (BRITISH POUND), JPY (JAPANESE YEN).
-    """
     try:
         fetcher = getattr(FUNDAMENTALS, "cftc", None)
         if fetcher is None:
@@ -754,7 +772,6 @@ def fetch_cot_reports() -> List[Any]:
         all_cot = fetcher.fetch() or []
         filtered: List[Any] = []
         for c in all_cot:
-            # يدعم attribute أو dict
             market_name = (
                 getattr(c, "market", None)
                 if not isinstance(c, dict)
@@ -772,7 +789,6 @@ def fetch_cot_reports() -> List[Any]:
 
 
 def fetch_cpi_data() -> Optional[Any]:
-    """Wrapper آمن حول FUNDAMENTALS.cpi.fetch_latest()."""
     try:
         fetcher = getattr(FUNDAMENTALS, "cpi", None)
         if fetcher is None:
@@ -782,6 +798,19 @@ def fetch_cpi_data() -> Optional[Any]:
     except Exception as e:
         logger.warning("CPI fetch failed: %s", e)
         return None
+
+
+def fetch_fred_macro() -> Dict[str, Any]:
+    """Wrapper آمن حول FREDFetcher (مضاف) — لا يكسر التطبيق عند فشله."""
+    try:
+        fred_fetcher = getattr(FUNDAMENTALS, "fred", None)
+        if fred_fetcher is None:
+            logger.warning("FUNDAMENTALS.fred غير موجود — تخطي FRED")
+            return {}
+        return fred_fetcher.fetch_macro() or {}
+    except Exception as e:
+        logger.warning("FRED fetch failed: %s", e)
+        return {}
 
 
 # =============================================================================
@@ -844,8 +873,8 @@ def index():
     stats = DB.get_stats()
     strategy_stats = DB.get_filter_stats()
 
-    # 👇 الأخبار الحية
-    live_news = fetch_live_news()
+    # 👇 1) الأخبار: تقويم اقتصادي عالي التأثير (بدل RSS)
+    live_news = fetch_economic_calendar_news(limit=10)
 
     fundamental_biases = DB.get_all_fundamental_bias()
     timemachine_cache = {
@@ -857,6 +886,9 @@ def index():
     # 👇 COT (مُصفّى) + CPI
     cot_reports = fetch_cot_reports()
     cpi_data = fetch_cpi_data()
+
+    # 👇 2) بيانات FRED الإضافية
+    fred_data: Dict[str, Any] = fetch_fred_macro()
 
     balance = get_balance()
     open_risk_pct = RISK._portfolio_risk_pct(open_pos, balance)
@@ -875,8 +907,9 @@ def index():
         fundamental_biases=fundamental_biases,
         timemachine_cache=timemachine_cache,
         live_prices=live_prices,
-        cot_reports=cot_reports,        # 👈 مُصفّى
+        cot_reports=cot_reports,
         cpi_data=cpi_data,
+        fred_data=fred_data,            # 👈 جديد
         settings=USER_SETTINGS,
         symbols=SYMBOLS,
         now=utcnow().strftime("%Y-%m-%d %H:%M UTC"),
@@ -979,8 +1012,8 @@ def api_news():
 
 @app.route("/api/news/live")
 def api_news_live():
-    """Live RSS news."""
-    return jsonify(fetch_live_news())
+    """أخبار التقويم الاقتصادي (عالي التأثير)."""
+    return jsonify(fetch_economic_calendar_news(limit=10))
 
 
 @app.route("/api/strategies")
@@ -998,15 +1031,19 @@ def api_fundamentals():
 
 @app.route("/api/cot")
 def api_cot():
-    """تقارير COT مُصفّاة لأسواقنا فقط."""
     return jsonify(fetch_cot_reports())
 
 
 @app.route("/api/cpi")
 def api_cpi():
-    """آخر قراءة CPI."""
     data = fetch_cpi_data()
     return jsonify(data) if data else jsonify({"ok": False, "error": "no_data"}), 200
+
+
+@app.route("/api/fred")
+def api_fred():
+    """بيانات FRED الإضافية (macro)."""
+    return jsonify(fetch_fred_macro())
 
 
 @app.route("/api/timemachine/<signal_uid>")
@@ -1030,7 +1067,6 @@ def api_timemachine(signal_uid: str):
 
 @app.route("/api/ping")
 def api_ping():
-    """Lightweight keep-alive endpoint for external cron."""
     return jsonify({"ok": True, "t": utcnow().isoformat()})
 
 
@@ -1103,7 +1139,6 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
 
 
-# Start scheduler when gunicorn imports the app (production)
 def _delayed_start_scheduler():
     import time as _t
     _t.sleep(8)
