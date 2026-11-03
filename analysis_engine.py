@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import time as _time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta, timezone
@@ -979,74 +980,97 @@ def analyze_symbol(symbol: str, timeframe: str, style: str,
 
 
 # =============================================================================
-# LIVE PRICES (Yahoo + Stooq Fallback)
+# LIVE PRICES (TwelveData → AlphaVantage → Yahoo/Stooq)
 # =============================================================================
-_prices_cache_data: Dict[str, Any] = {}
-_prices_cache_time: float = 0.0
+_price_cache: Dict[str, Dict[str, Any]] = {}
+_price_cache_time: float = 0.0
+
 
 def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
-    global _prices_cache_data, _prices_cache_time
+    global _price_cache, _price_cache_time
     now = _time.time()
 
-    if now - _prices_cache_time < 15 and _prices_cache_data:
-        return _prices_cache_data
+    # تخزين مؤقت لمدة 60 ثانية لتجنب استهلاك حدود Twelve Data (8 طلبات/دقيقة)
+    if now - _price_cache_time < 60 and _price_cache:
+        return _price_cache
 
     prices: Dict[str, Dict[str, Any]] = {}
-    
+
+    # 1. المحاولة الأولى: Twelve Data (الأفضل والأسرع)
+    td_key = os.getenv("TWELVE_DATA_API_KEY")
+    if td_key:
+        td_syms = {
+            "XAU/USD": "XAU/USD", "XAG/USD": "XAG/USD", "WTI/USD": "WTI/USD",
+            "EUR/USD": "EUR/USD", "GBP/USD": "GBP/USD", "USD/JPY": "USD/JPY", "DXY": "DXY"
+        }
+        try:
+            sym_str = ",".join([td_syms[s] for s in symbols if s in td_syms])
+            url = f"https://api.twelvedata.com/quote?symbol={sym_str}&apikey={td_key}"
+            r = requests.get(url, timeout=8).json()
+
+            if "code" not in r:  # لا يوجد خطأ
+                for sym, td_sym in td_syms.items():
+                    if td_sym in r:
+                        data = r[td_sym]
+                        prices[sym] = {
+                            "price": round(float(data.get("close", 0)), 5),
+                            "change_pct": round(float(data.get("percent_change", 0)), 2)
+                        }
+                if prices:
+                    _price_cache, _price_cache_time = prices, now
+                    return prices
+        except Exception as e:
+            logger.warning(f"TwelveData failed: {e}")
+
+    # 2. المحاولة الثانية: Alpha Vantage (احتياطي)
+    av_key = os.getenv("ALPHA_VANTAGE_API_KEY")
+    if av_key and not prices:
+        av_syms = {
+            "XAU/USD": ("XAU", "USD"), "EUR/USD": ("EUR", "USD"),
+            "GBP/USD": ("GBP", "USD"), "USD/JPY": ("USD", "JPY")
+        }
+        for sym in symbols:
+            if sym in av_syms:
+                f, t = av_syms[sym]
+                try:
+                    url = f"https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency={f}&to_currency={t}&apikey={av_key}"
+                    r = requests.get(url, timeout=5).json()
+                    rate = r.get("Realtime Currency Exchange Rate", {}).get("5. Exchange Rate")
+                    if rate:
+                        prices[sym] = {"price": round(float(rate), 5), "change_pct": 0.0}
+                except Exception:
+                    pass
+        if prices:
+            _price_cache, _price_cache_time = prices, now
+            return prices
+
+    # 3. المحاولة الثالثة: Yahoo/Stooq (الكود القديم كخط أخير)
     yahoo_syms = {
         "XAU/USD": "GC=F", "XAG/USD": "SI=F", "WTI/USD": "CL=F",
         "EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X",
         "DXY": "DX-Y.NYB"
     }
-    stooq_syms = {
-        "XAU/USD": "xauusd", "XAG/USD": "xagusd", "WTI/USD": "cl.f",
-        "EUR/USD": "eurusd", "GBP/USD": "gbpusd", "USD/JPY": "usdjpy",
-        "DXY": "dx.f"
-    }
-    
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    
     for symbol in symbols:
-        # 1. المحاولة عبر Yahoo أولاً
         ticker = yahoo_syms.get(symbol)
-        if ticker:
-            try:
-                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=2d"
-                r = requests.get(url, headers=headers, timeout=5)
-                if r.status_code == 200:
-                    data = r.json()
-                    result = data.get("chart", {}).get("result", [])
-                    if result:
-                        meta = result[0].get("meta", {})
-                        cur = meta.get("regularMarketPrice")
-                        prev = meta.get("chartPreviousClose")
-                        if cur and prev:
-                            chg = ((cur - prev) / prev * 100)
-                            prices[symbol] = {"price": round(cur, 5), "change_pct": round(chg, 2)}
-                            continue
-            except Exception:
-                pass
+        if not ticker:
+            continue
+        try:
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=2d"
+            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+            if r.status_code == 200:
+                res = r.json().get("chart", {}).get("result", [])
+                if res:
+                    meta = res[0].get("meta", {})
+                    cur, prev = meta.get("regularMarketPrice"), meta.get("chartPreviousClose")
+                    if cur and prev:
+                        prices[symbol] = {
+                            "price": round(cur, 5),
+                            "change_pct": round(((cur - prev) / prev * 100), 2)
+                        }
+        except Exception:
+            pass
 
-        # 2. المحاولة عبر Stooq (احتياطي)
-        st_ticker = stooq_syms.get(symbol)
-        if st_ticker:
-            try:
-                url = f"https://stooq.com/q/l/?s={st_ticker}&f=sd2t2ohlcv&h&e=csv"
-                r = requests.get(url, timeout=5)
-                if r.status_code == 200:
-                    lines = r.text.strip().split("\n")
-                    if len(lines) > 1:
-                        parts = lines[1].split(",")
-                        cur = float(parts[6])
-                        prev = float(parts[3])
-                        if cur > 0:
-                            chg = ((cur - prev) / prev * 100) if prev else 0
-                            prices[symbol] = {"price": round(cur, 5), "change_pct": round(chg, 2)}
-            except Exception as e:
-                logger.debug("Stooq failed for %s: %s", symbol, e)
-                
-    _prices_cache_data = prices
-    _prices_cache_time = now
+    _price_cache, _price_cache_time = prices, now
     return prices
 
 
