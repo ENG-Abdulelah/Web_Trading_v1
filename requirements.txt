@@ -13,3 +13,4 @@ gunicorn>=21.2.0,<23.0
 fredapi>=0.5.1
 biquote>=0.3.0
 feedparser>=6.0.14
+yfrlt>=1.0.0
