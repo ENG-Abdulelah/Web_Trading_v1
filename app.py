@@ -3,8 +3,7 @@
 Web Trading Bot — Personal Trading Analyst (Flask)
 Real market analysis, ICT×20, News guard (5/10), Fundamental Bias, TimeMachine,
 Risk gates, Trailing/Breakeven/Partial TP1, Weekend flatten.
-+ DXY, Live RSS News, i18n (AR/EN), COT (filtered), CPI, Liquidity/Session snapshot,
-+ High-impact Economic Calendar news + FRED macro data.
++ DXY, Live RSS News, i18n (AR/EN), COT (filtered), CPI, Liquidity/Session snapshot.
 
 Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
 """
@@ -16,8 +15,8 @@ import threading
 import time
 import uuid
 
-import feedparser                       # Live RSS
-import pandas as pd                     # fetch_live_news + calendar time parsing
+import feedparser
+import pandas as pd
 
 from analysis_engine import (
     NewsFetcher, SYMBOL_SPECS, analyze_symbol,
@@ -35,12 +34,6 @@ from fundamentals import get_engine as get_fundamentals_engine
 from risk_manager import RiskManager, RiskConfig
 from session_guard import SessionGuard
 from timemachine import TimeMachine
-
-# 👇 مصدر التقويم الاقتصادي (BigQuery wrapper) — عدّل المسار لو مختلف عندك
-try:
-    from economic_calendar import bq   # noqa: F401
-except ImportError:
-    bq = None
 
 # =============================================================================
 # SETUP
@@ -64,11 +57,9 @@ RISK = RiskManager(RiskConfig())
 FUNDAMENTALS = get_fundamentals_engine()
 TIMEMACHINE = TimeMachine(DB)
 
-# 👇 DXY مضاف
 SYMBOLS = ["XAU/USD", "XAG/USD", "WTI/USD",
            "EUR/USD", "GBP/USD", "USD/JPY", "DXY"]
 
-# 👇 كلمات مفتاحية لتصفية تقارير COT (تطابق Markets في CFTC)
 COT_VALID_MARKETS = [
     "GOLD", "SILVER", "CRUDE OIL",
     "EURO FX", "BRITISH POUND", "JAPANESE YEN",
@@ -88,10 +79,8 @@ USER_SETTINGS: Dict[str, Any] = {
     "last_cycle_stats": {},
 }
 
-# thread safety for position management
 _positions_lock = threading.RLock()
 
-# 👇 نافذة حظر الأخبار (دقيقة قبل / دقيقة بعد)
 NEWS_BEFORE_MIN = 5
 NEWS_AFTER_MIN = 10
 
@@ -193,10 +182,9 @@ def set_lang(l):
 
 
 # =============================================================================
-# LIVE NEWS (RSS) — kept as fallback
+# LIVE NEWS (RSS)
 # =============================================================================
 def fetch_live_news():
-    """Fetch live news from ForexLive / Investing.com RSS (fallback)."""
     feeds = [
         "https://www.forexlive.com/feed/news",
         "https://www.investing.com/rss/news_14.rss",
@@ -232,39 +220,6 @@ def fetch_live_news():
     return news_items[:20]
 
 
-def fetch_economic_calendar_news(limit: int = 10) -> List[Dict[str, Any]]:
-    """
-    جلب أخبار عالية التأثير فقط من التقويم الاقتصادي.
-    يرجع [] عند أي فشل (bq غير معرّف / فشل الشبكة / إلخ).
-    """
-    if bq is None:
-        logger.warning("bq (economic_calendar) غير مستورد — رجوع فارغ")
-        return []
-    try:
-        events = bq.calendar(
-            importance="high",
-            countries="US,EU,GB,JP",
-        )
-        result: List[Dict[str, Any]] = []
-        for ev in events[:limit]:
-            raw_date = ev.get("date")
-            try:
-                dt = pd.to_datetime(raw_date, utc=True).to_pydatetime()
-            except Exception:
-                dt = utcnow()
-            result.append({
-                "title": ev.get("event", "—"),
-                "time": dt,
-                "impact": "high",
-                "url": "#",
-                "tag": "Economic",
-            })
-        return result
-    except Exception as e:
-        logger.warning("economic calendar fetch failed: %s", e)
-        return []
-
-
 # =============================================================================
 # STATE HELPERS
 # =============================================================================
@@ -292,6 +247,14 @@ def today_closed() -> List[Dict[str, Any]]:
 
 
 def market_snapshot() -> Dict[str, Any]:
+    """
+    Snapshot مركّز للسوق:
+      - حظر أخبار: 5 دقائق قبل / 10 بعد
+      - الجلسات النشطة (تُعرض كلها معاً)
+      - مستوى السيولة
+      - وقت افتتاح السوق القادم
+      - is_weekend للتمييز بين العطلة والتوقف المؤقت
+    """
     state = GUARD.state()
 
     news_blackout = NEWS.high_impact_within(
@@ -308,11 +271,14 @@ def market_snapshot() -> Dict[str, Any]:
     else:
         liquidity, liq_color = "متوسطة", "warning"
 
-    if state.active_sessions:
-        s0 = state.active_sessions[0]
-        session_name = s0.get("name_ar") or s0.get("name") or "—"
-    else:
-        session_name = "لا توجد جلسة"
+    # عرض كل الجلسات النشطة معاً بدلاً من واحدة فقط
+    session_name = (
+        " + ".join([
+            s.get("name_ar") or s.get("name") or "—"
+            for s in state.active_sessions
+        ])
+        if state.active_sessions else "لا توجد جلسة"
+    )
 
     next_open_ts: Optional[str] = None
     next_session = getattr(state, "next_session", None)
@@ -323,6 +289,8 @@ def market_snapshot() -> Dict[str, Any]:
         except Exception as e:
             logger.warning("next_open_ts calc failed: %s", e)
 
+    is_weekend = bool(getattr(state, "is_weekend", False))
+
     return {
         **state.to_dict(),
         "news_blackout": news_blackout,
@@ -330,6 +298,7 @@ def market_snapshot() -> Dict[str, Any]:
         "liq_color": liq_color,
         "session_name": session_name,
         "next_open_ts": next_open_ts,
+        "is_weekend": is_weekend,
     }
 
 
@@ -761,7 +730,7 @@ def _update_filter_weight(strategy: str, realized_r: float) -> None:
 
 
 # =============================================================================
-# COT / CPI FETCHERS (filtered + safe)
+# COT / CPI FETCHERS
 # =============================================================================
 def fetch_cot_reports() -> List[Any]:
     try:
@@ -798,19 +767,6 @@ def fetch_cpi_data() -> Optional[Any]:
     except Exception as e:
         logger.warning("CPI fetch failed: %s", e)
         return None
-
-
-def fetch_fred_macro() -> Dict[str, Any]:
-    """Wrapper آمن حول FREDFetcher (مضاف) — لا يكسر التطبيق عند فشله."""
-    try:
-        fred_fetcher = getattr(FUNDAMENTALS, "fred", None)
-        if fred_fetcher is None:
-            logger.warning("FUNDAMENTALS.fred غير موجود — تخطي FRED")
-            return {}
-        return fred_fetcher.fetch_macro() or {}
-    except Exception as e:
-        logger.warning("FRED fetch failed: %s", e)
-        return {}
 
 
 # =============================================================================
@@ -873,8 +829,7 @@ def index():
     stats = DB.get_stats()
     strategy_stats = DB.get_filter_stats()
 
-    # 👇 1) الأخبار: تقويم اقتصادي عالي التأثير (بدل RSS)
-    live_news = fetch_economic_calendar_news(limit=10)
+    live_news = fetch_live_news()
 
     fundamental_biases = DB.get_all_fundamental_bias()
     timemachine_cache = {
@@ -883,12 +838,8 @@ def index():
     }
     live_prices = get_live_prices(SYMBOLS)
 
-    # 👇 COT (مُصفّى) + CPI
     cot_reports = fetch_cot_reports()
     cpi_data = fetch_cpi_data()
-
-    # 👇 2) بيانات FRED الإضافية
-    fred_data: Dict[str, Any] = fetch_fred_macro()
 
     balance = get_balance()
     open_risk_pct = RISK._portfolio_risk_pct(open_pos, balance)
@@ -909,7 +860,6 @@ def index():
         live_prices=live_prices,
         cot_reports=cot_reports,
         cpi_data=cpi_data,
-        fred_data=fred_data,            # 👈 جديد
         settings=USER_SETTINGS,
         symbols=SYMBOLS,
         now=utcnow().strftime("%Y-%m-%d %H:%M UTC"),
@@ -1012,8 +962,7 @@ def api_news():
 
 @app.route("/api/news/live")
 def api_news_live():
-    """أخبار التقويم الاقتصادي (عالي التأثير)."""
-    return jsonify(fetch_economic_calendar_news(limit=10))
+    return jsonify(fetch_live_news())
 
 
 @app.route("/api/strategies")
@@ -1038,12 +987,6 @@ def api_cot():
 def api_cpi():
     data = fetch_cpi_data()
     return jsonify(data) if data else jsonify({"ok": False, "error": "no_data"}), 200
-
-
-@app.route("/api/fred")
-def api_fred():
-    """بيانات FRED الإضافية (macro)."""
-    return jsonify(fetch_fred_macro())
 
 
 @app.route("/api/timemachine/<signal_uid>")
@@ -1072,6 +1015,12 @@ def api_ping():
 
 @app.route("/api/prices")
 def api_prices():
+    return jsonify(get_live_prices(SYMBOLS))
+
+
+@app.route("/api/live_prices")
+def api_live_prices():
+    """مسار خفيف لجلب الأسعار الحية للـ JavaScript"""
     return jsonify(get_live_prices(SYMBOLS))
 
 
