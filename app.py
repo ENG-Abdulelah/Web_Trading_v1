@@ -4,6 +4,7 @@ Web Trading Bot — Personal Trading Analyst (Flask)
 Real market analysis, ICT×20, News guard (5/10), Fundamental Bias, TimeMachine,
 Risk gates, Trailing/Breakeven/Partial TP1, Weekend flatten.
 + DXY, Live RSS News, i18n (AR/EN), COT (filtered), CPI, Liquidity/Session snapshot.
++ Yahoo Finance price streamer.
 
 Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
 """
@@ -22,6 +23,8 @@ from analysis_engine import (
     NewsFetcher, SYMBOL_SPECS, analyze_symbol,
     get_live_prices, fetch_news_with_fallback,
 )
+
+from price_streamer import start_price_streamer
 
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
@@ -271,7 +274,6 @@ def market_snapshot() -> Dict[str, Any]:
     else:
         liquidity, liq_color = "متوسطة", "warning"
 
-    # عرض كل الجلسات النشطة معاً بدلاً من واحدة فقط
     session_name = (
         " + ".join([
             s.get("name_ar") or s.get("name") or "—"
@@ -1064,6 +1066,14 @@ def api_settings():
         start_scheduler()
         return jsonify({"ok": True, "settings": USER_SETTINGS})
     return jsonify(USER_SETTINGS)
+
+
+# بدء البث اللحظي عند إقلاع التطبيق
+try:
+    start_price_streamer()
+    logger.info("Yahoo Finance price streamer started.")
+except Exception as e:
+    logger.error("Failed to start price streamer: %s", e)
 
 
 # =============================================================================
