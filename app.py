@@ -1,4 +1,4 @@
-```python
+
 # app.py
 """
 Web Trading Bot — Personal Trading Analyst (Flask)
