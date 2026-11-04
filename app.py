@@ -43,6 +43,15 @@ logger = logging.getLogger("app")
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
 
+
+# =============================================================================
+# HEALTH CHECK (for Render / Gunicorn)
+# =============================================================================
+@app.route("/api/ping")
+def api_ping():
+    return "pong", 200
+
+
 # =============================================================================
 # GLOBALS
 # =============================================================================
@@ -226,7 +235,6 @@ def today_closed() -> List[Dict[str, Any]]:
 def market_snapshot() -> Dict[str, Any]:
     state = GUARD.state()
 
-    # استخدام التقويم الجديد
     news_blackout = get_news_blackout()
     news_event = None
     if news_blackout.get("active"):
@@ -336,9 +344,6 @@ def run_analysis_cycle() -> Dict[str, Any]:
         stats["blocked_reason"] = f"News blackout: {news_event['title']}"
         USER_SETTINGS["last_cycle_stats"] = stats
         return stats
-
-    # تحديث قاعدة البيانات بالأخبار الجديدة (إن لزم)
-    pass
 
     biases = {}  # 👈 تم تعطيل الجلب القديم مؤقتاً لتجنب الحظر
 
@@ -971,11 +976,6 @@ def api_timemachine(signal_uid: str):
     })
 
 
-@app.route("/api/ping")
-def api_ping():
-    return jsonify({"ok": True, "t": utcnow().isoformat()})
-
-
 @app.route("/api/prices")
 def api_prices():
     return jsonify(get_live_prices(SYMBOLS))
@@ -1026,33 +1026,9 @@ def api_settings():
     return jsonify(USER_SETTINGS)
 
 
-# بدء البث اللحظي
-start_price_feed()
-logger.info("Price feed background thread started.")
-
-
 # =============================================================================
-# BOOT
+# BACKGROUND STARTUP (Gunicorn imports this module)
 # =============================================================================
-if __name__ == "__main__":
-    logger.info("=" * 60)
-    logger.info("Web Trading Bot — Personal Trading Analyst")
-    logger.info("Developed & Engineered by Engineer Abdulelah Sadiq")
-    logger.info("             (المهندس عبد الإله صادق)")
-    logger.info("=" * 60)
-
-    st = GUARD.state()
-    logger.info(
-        "Market open=%s sessions=%s kill_zones=%s",
-        st.is_open,
-        [s["name"] for s in st.active_sessions],
-        [k["name"] for k in st.active_kill_zones],
-    )
-
-    start_scheduler()
-    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
-
-
 def _delayed_start_scheduler():
     import time as _t
     _t.sleep(8)
@@ -1064,3 +1040,12 @@ def _delayed_start_scheduler():
 
 
 threading.Thread(target=_delayed_start_scheduler, daemon=True).start()
+
+
+try:
+    start_price_feed()
+    logger.info("Price feed background thread started.")
+except Exception as e:
+    logger.error("Failed to start price feed: %s", e)
+
+# لا تضع app.run() هنا لأن Gunicorn هو من سيشغل السيرفر
