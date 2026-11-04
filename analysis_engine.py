@@ -1,8 +1,9 @@
+```python
 # analysis_engine.py
 """
 ICT/SMC Analysis Engine — 20 strategies on real OHLCV data.
-NO random or synthetic data used. Uses yfinance for real candles,
-ForexFactory JSON + ForexLive RSS for real news.
+NO random or synthetic data used. Uses Yahoo Finance Chart API (direct HTTP)
+for real candles, ForexFactory JSON + ForexLive RSS for real news.
 Live prices: TwelveData (15s cache).
 
 Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
@@ -21,7 +22,6 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 import requests
-import yfinance as yf
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
@@ -33,7 +33,7 @@ def utcnow() -> datetime:
 
 
 # =============================================================================
-# SYMBOL MAPPING (yfinance)
+# SYMBOL MAPPING (Yahoo Finance tickers)
 # =============================================================================
 YF_MAP = {
     "XAU/USD": "GC=F",
@@ -59,7 +59,7 @@ TIMEFRAME_MAP = {
     "5M":  ("5m",  "5d"),
     "15M": ("15m", "5d"),
     "1H":  ("60m", "1mo"),
-    "4H":  ("1h",  "3mo"),   # yfinance max intraday for 1h is ~2y
+    "4H":  ("1h",  "3mo"),   # Yahoo max intraday for 1h is ~2y
     "1D":  ("1d",  "2y"),
     "1W":  ("1wk", "5y"),
 }
@@ -77,12 +77,10 @@ STRATEGY_NAMES = [
 # DATA FETCHERS
 # =============================================================================
 class CandleFetcher:
-    """Fetches real OHLCV data from yfinance with retry + cache."""
-
-    def __init__(self, cache_ttl_sec: int = 900):    # 👈 زيادة التخزين المؤقت إلى 15 دقيقة
-        self._cache: Dict[str, tuple] = {}
+    def __init__(self, cache_ttl_sec: int = 900):
+        self._cache = {}
         self._ttl = cache_ttl_sec
-        self._fail_cache: Dict[str, float] = {}
+        self._fail_cache = {}
 
     def get(self, symbol: str, timeframe: str) -> Optional[pd.DataFrame]:
         key = f"{symbol}:{timeframe}"
@@ -100,28 +98,41 @@ class CandleFetcher:
         yf_symbol = YF_MAP.get(symbol)
         if not yf_symbol:
             return None
-        interval, period = TIMEFRAME_MAP.get(timeframe, ("1h", "1mo"))
 
-        for attempt in range(2):
-            try:
-                # 👈 إضافة auto_adjust=False لإزالة التحذير
-                df = yf.download(yf_symbol, period=period, interval=interval, progress=False, auto_adjust=False)
-                if df is not None and not df.empty:
-                    # 👈 السطر السحري: إذا كانت الأعمدة متعددة المستويات، اجعلها مستوى واحد
-                    if isinstance(df.columns, pd.MultiIndex):
-                        df.columns = df.columns.get_level_values(0)
+        interval_map = {
+            "1M": ("1m", "1d"), "5M": ("5m", "5d"), "15M": ("15m", "5d"),
+            "1H": ("60m", "1mo"), "4H": ("1h", "3mo"), "1D": ("1d", "1y"), "1W": ("1wk", "5y")
+        }
+        interval, range_ = interval_map.get(timeframe, ("1h", "1mo"))
 
-                    df = df.rename(columns={"Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
-                    df = df[["open", "high", "low", "close", "volume"]].copy()
-                    df.index = pd.to_datetime(df.index, utc=True)
-                    df = df[~df.index.duplicated(keep="last")].sort_index()
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_symbol}?interval={interval}&range={range_}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
-                    self._cache[key] = (now, df)
-                    self._fail_cache.pop(key, None)
-                    return df
-            except Exception as e:
-                logger.warning("yfinance attempt %d %s@%s: %s", attempt + 1, symbol, timeframe, e)
-                _time.sleep(2.0)
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                result = data.get("chart", {}).get("result", [])
+                if result:
+                    timestamps = result[0].get("timestamp", [])
+                    quote = result[0].get("indicators", {}).get("quote", [{}])[0]
+                    opens = quote.get("open", [])
+                    highs = quote.get("high", [])
+                    lows = quote.get("low", [])
+                    closes = quote.get("close", [])
+                    volumes = quote.get("volume", [])
+
+                    df = pd.DataFrame({
+                        "open": opens, "high": highs, "low": lows, "close": closes, "volume": volumes
+                    }, index=pd.to_datetime(timestamps, unit="s", utc=True))
+
+                    df = df.dropna()
+                    if not df.empty:
+                        self._cache[key] = (now, df)
+                        self._fail_cache.pop(key, None)
+                        return df
+        except Exception as e:
+            logger.warning("Direct Yahoo chart failed %s@%s: %s", symbol, timeframe, e)
 
         self._fail_cache[key] = now
         return None
@@ -1156,7 +1167,7 @@ def fetch_news_with_fallback() -> List[Dict[str, Any]]:
         f"https://corsproxy.io/?{target_url}",
         f"https://api.allorigins.win/raw?url={target_url}"
     ]
-    
+
     for url in urls:
         try:
             r = requests.get(url, timeout=12, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
@@ -1167,7 +1178,7 @@ def fetch_news_with_fallback() -> List[Dict[str, Any]]:
                     return _normalize_news(data)
         except Exception as e:
             logger.debug("News from %s failed: %s", url[:40], e)
-            
+
     logger.warning("All news sources failed or were blocked.")
     return []
 
@@ -1193,3 +1204,4 @@ def _normalize_news(raw: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "actual": item.get("actual", ""),
         })
     return out
+```
