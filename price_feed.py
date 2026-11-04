@@ -112,15 +112,20 @@ def fetch_one_safe(sym):
                 price, _, _, _ = fetch_metals_spot(cfg["spot_code"])
                 if apply_tick(sym, price, None, None, None, "gold-api-spot"):
                     record_fetch(sym, True)
+                    print(f"[price] {sym} = {price:.{cfg['decimals']}f} (gold-api-spot)", flush=True)
                     return
-            except Exception:
-                pass # Fallback to Yahoo
+            except Exception as spot_exc:
+                print(f"[price] {sym} spot failed ({spot_exc}) — Yahoo fallback", flush=True)
+
         price, prev_close, hi, lo = fetch_yahoo_quote(cfg["yahoo"])
         if apply_tick(sym, price, prev_close, hi, lo, "yahoo"):
             record_fetch(sym, True)
+            print(f"[price] {sym} = {price:.{cfg['decimals']}f} (yahoo)", flush=True)
         else:
             record_fetch(sym, False)
-    except Exception:
+            print(f"[price] {sym} rejected by bounds", flush=True)
+    except Exception as exc:
+        print(f"[price] {sym} fetch failed: {exc}", flush=True)
         record_fetch(sym, False)
 
 def _price_feed_loop():
