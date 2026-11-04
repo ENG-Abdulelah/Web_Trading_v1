@@ -16,18 +16,8 @@ import threading
 import time
 import uuid
 
-import feedparser
-import pandas as pd
-
-from analysis_engine import (
-    NewsFetcher, SYMBOL_SPECS, analyze_symbol,
-    fetch_news_with_fallback,
-)
-
-from price_feed import (
-    PRICES, PRICE_LOCK, start_price_feed,
-    build_calendar, get_news_blackout,
-)
+from analysis_engine import SYMBOL_SPECS, analyze_symbol
+from price_feed import PRICES, PRICE_LOCK, start_price_feed, build_calendar, get_news_blackout
 
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
@@ -58,7 +48,6 @@ app.config["JSON_AS_ASCII"] = False
 # =============================================================================
 DB = Database()
 GUARD = SessionGuard()
-# NEWS = NewsFetcher()  # ❌ تم تعطيله لوقف خطأ 429 (نستخدم price_feed بدلاً منه)
 RISK = RiskManager(RiskConfig())
 FUNDAMENTALS = get_fundamentals_engine()
 TIMEMACHINE = TimeMachine(DB)
@@ -209,45 +198,6 @@ def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
 
 
 # =============================================================================
-# LIVE NEWS (RSS) — legacy helper, unused (kept for compatibility)
-# =============================================================================
-def fetch_live_news():
-    feeds = [
-        "https://www.forexlive.com/feed/news",
-        "https://www.investing.com/rss/news_14.rss",
-    ]
-    news_items = []
-    for url in feeds:
-        try:
-            feed = feedparser.parse(url)
-            for entry in feed.entries[:10]:
-                dt = (
-                    pd.to_datetime(entry.published, utc=True).to_pydatetime()
-                    if hasattr(entry, "published") else utcnow()
-                )
-
-                title_lower = entry.title.lower()
-                is_geo = any(w in title_lower for w in
-                             ["war", "sanction", "conflict",
-                              "military", "attack", "election"])
-                impact = "high" if is_geo else "medium"
-                tag = "Geopolitical" if is_geo else "Economic"
-
-                news_items.append({
-                    "title": entry.title,
-                    "url": entry.link,
-                    "time": dt,
-                    "impact": impact,
-                    "tag": tag,
-                })
-        except Exception as e:
-            logger.warning(f"RSS fetch failed for {url}: {e}")
-
-    news_items.sort(key=lambda x: x["time"], reverse=True)
-    return news_items[:20]
-
-
-# =============================================================================
 # STATE HELPERS
 # =============================================================================
 def get_balance() -> float:
@@ -276,14 +226,14 @@ def today_closed() -> List[Dict[str, Any]]:
 def market_snapshot() -> Dict[str, Any]:
     state = GUARD.state()
 
-    # 👈 استخدام التقويم الجديد (price_feed) بدلاً من NEWS القديم
+    # استخدام التقويم الجديد
     news_blackout = get_news_blackout()
     news_event = None
     if news_blackout.get("active"):
         news_event = {
-            "title": news_blackout.get("event_ar", ""),
-            "currency": news_blackout.get("currency", ""),
-            "event_time": news_blackout.get("when", ""),
+            "title": news_blackout["event_ar"],
+            "currency": news_blackout["currency"],
+            "event_time": news_blackout["when"],
         }
 
     if not state.is_open:
@@ -296,10 +246,7 @@ def market_snapshot() -> Dict[str, Any]:
         liquidity, liq_color = "متوسطة", "warning"
 
     session_name = (
-        " + ".join([
-            s.get("name_ar") or s.get("name") or "—"
-            for s in state.active_sessions
-        ])
+        " + ".join([s["name_ar"] for s in state.active_sessions])
         if state.active_sessions else "لا توجد جلسة"
     )
 
@@ -372,7 +319,6 @@ def run_analysis_cycle() -> Dict[str, Any]:
         USER_SETTINGS["last_cycle_stats"] = stats
         return stats
 
-    # 👈 استخدام التقويم الجديد بدلاً من NEWS.high_impact_within
     news_check = get_news_blackout()
     news_event = (
         {"title": news_check.get("event_ar", "")}
@@ -391,12 +337,8 @@ def run_analysis_cycle() -> Dict[str, Any]:
         USER_SETTINGS["last_cycle_stats"] = stats
         return stats
 
-    try:
-        events = fetch_news_with_fallback()
-        if events:
-            DB.replace_news_cache(events)
-    except Exception as e:
-        logger.warning("news cache refresh failed: %s", e)
+    # تحديث قاعدة البيانات بالأخبار الجديدة (إن لزم)
+    pass
 
     try:
         biases = FUNDAMENTALS.bias_for_all(SYMBOLS)
@@ -858,7 +800,6 @@ def index():
     stats = DB.get_stats()
     strategy_stats = DB.get_filter_stats()
 
-    # 👈 الأخبار من التقويم الثابت
     news = build_calendar()
 
     fundamental_biases = DB.get_all_fundamental_bias()
