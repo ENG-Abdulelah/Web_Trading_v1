@@ -1,4 +1,8 @@
 # price_feed.py
+"""
+Real-time Price Feed & Static Economic Calendar.
+Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
+"""
 import json
 import threading
 import time
@@ -6,8 +10,11 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from urllib.request import Request, urlopen
 
+import requests
+
+# --- Configuration ---
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-HTTP_TIMEOUT = 8  # تقليل المهلة لتجنب تعليق الخادم
+HTTP_TIMEOUT = 10
 NEWS_BLACKOUT_BEFORE_MIN = 5
 NEWS_BLACKOUT_AFTER_MIN = 10
 
@@ -21,18 +28,21 @@ SYMBOLS = {
     "DXY":     {"yahoo": "DX-Y.NYB", "spot_code": None, "metals_spot": False, "decimals": 3},
 }
 
+# حدود الأمان (لمنع الأسعار الشاذة)
 PRICE_BOUNDS = {
     "XAU/USD": (1000.0, 5000.0), "XAG/USD": (10.0, 100.0),
     "WTI/USD": (20.0, 200.0), "EUR/USD": (0.5, 2.0),
     "GBP/USD": (0.5, 2.5), "USD/JPY": (80.0, 250.0), "DXY": (70.0, 150.0)
 }
 
+# --- State Management ---
 PRICE_LOCK = threading.RLock()
 PRICES = {sym: {"price": 0.0, "prev_price": 0.0, "prev_close": 0.0, "high": 0.0, "low": 0.0, "history": [], "last_update": "", "source": "init", "stale": True} for sym in SYMBOLS}
 LAST_FETCH = {}
 PRICE_POOL = ThreadPoolExecutor(max_workers=7)
 SHUTDOWN = threading.Event()
 
+# --- Functions ---
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
@@ -42,59 +52,59 @@ def should_fetch(sym):
     return (time.time() - entry["time"]) >= entry["backoff"]
 
 def record_fetch(sym, success):
-    LAST_FETCH[sym] = {"time": time.time(), "backoff": 1.0 if success else 30.0} # زيادة وقت الفشل
+    LAST_FETCH[sym] = {"time": time.time(), "backoff": 1.0 if success else 20.0}
 
 def fetch_metals_spot(spot_code):
     url = f"https://api.gold-api.com/price/{spot_code}"
-    req = Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
-    with urlopen(req, timeout=HTTP_TIMEOUT) as resp:
-        payload = json.loads(resp.read().decode("utf-8"))
-    price = payload.get("price")
-    if price is None: raise ValueError("no price")
-    return float(price), None, None, None
+    try:
+        r = requests.get(url, timeout=5, headers={"User-Agent": UA})
+        if r.status_code == 200:
+            payload = r.json()
+            price = payload.get("price")
+            if price is not None:
+                return float(price), None, None, None
+    except Exception as e:
+        print(f"[price] gold-api error: {e}", flush=True)
+    raise ValueError("no spot price")
 
 def fetch_yahoo_quote(ticker):
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
-    req = Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
-    with urlopen(req, timeout=HTTP_TIMEOUT) as resp:
-        raw = resp.read().decode("utf-8")
-    payload = json.loads(raw)
-    result = payload["chart"]["result"][0]
-    meta = result.get("meta", {})
-    price = meta.get("regularMarketPrice")
-    prev = meta.get("previousClose") or meta.get("chartPreviousClose")
-    high = meta.get("regularMarketDayHigh")
-    low = meta.get("regularMarketDayLow")
-    if price is None: raise ValueError("no price")
-    return (float(price), float(prev) if prev else None, float(high) if high else None, float(low) if low else None)
+    try:
+        r = requests.get(url, timeout=5, headers={"User-Agent": UA, "Accept": "application/json"})
+        if r.status_code == 200:
+            payload = r.json()
+            result = payload["chart"]["result"][0]
+            meta = result.get("meta", {})
+            price = meta.get("regularMarketPrice")
+            prev = meta.get("previousClose") or meta.get("chartPreviousClose")
+            high = meta.get("regularMarketDayHigh")
+            low = meta.get("regularMarketDayLow")
+            if price is not None:
+                return (float(price), float(prev) if prev else None, float(high) if high else None, float(low) if low else None)
+    except Exception as e:
+        print(f"[price] yahoo error: {e}", flush=True)
+    raise ValueError("no yahoo price")
 
 def apply_tick(sym, price, prev_close, day_high, day_low, source):
-    try:
-        lo, hi = PRICE_BOUNDS.get(sym, (0.000001, 1e12))
-        if not (lo <= price <= hi): return False
-        
-        with PRICE_LOCK:
-            st = PRICES[sym]
-            st["prev_price"] = st["price"]
-            st["price"] = float(price)
-            if prev_close is not None: st["prev_close"] = float(prev_close)
-            
-            # حماية من القيم الفارغة
-            if day_high is not None: st["high"] = max(st["high"], float(day_high))
-            if day_low is not None: 
-                st["low"] = min(st["low"], float(day_low)) if st["low"] != 0 else float(day_low)
-            
-            st["high"] = max(st["high"], st["price"])
-            st["low"] = min(st["low"], st["price"]) if st["low"] != 0 else st["price"]
-            st["last_update"] = now_iso()
-            st["source"] = source
-            st["stale"] = False
-            st["history"].append(st["price"])
-            if len(st["history"]) > 120: st["history"].pop(0)
-        return True
-    except Exception as e:
-        print(f"[price] apply_tick error for {sym}: {e}", flush=True)
+    cfg = SYMBOLS[sym]
+    lo, hi = PRICE_BOUNDS.get(sym, (0.000001, 1e12))
+    if not (lo <= price <= hi):
         return False
+    with PRICE_LOCK:
+        st = PRICES[sym]
+        st["prev_price"] = st["price"]
+        st["price"] = float(price)
+        if prev_close is not None: st["prev_close"] = float(prev_close)
+        if day_high is not None: st["high"] = max(st["high"], float(day_high))
+        if day_low is not None: st["low"] = min(st["low"], float(day_low)) if st["low"] != 0 else float(day_low)
+        st["high"] = max(st["high"], st["price"])
+        st["low"] = min(st["low"], st["price"]) if st["low"] != 0 else st["price"]
+        st["last_update"] = now_iso()
+        st["source"] = source
+        st["stale"] = False
+        st["history"].append(st["price"])
+        if len(st["history"]) > 120: st["history"].pop(0)
+    return True
 
 def fetch_one_safe(sym):
     if not should_fetch(sym): return
@@ -105,16 +115,20 @@ def fetch_one_safe(sym):
                 price, _, _, _ = fetch_metals_spot(cfg["spot_code"])
                 if apply_tick(sym, price, None, None, None, "gold-api-spot"):
                     record_fetch(sym, True)
+                    print(f"[price] {sym} = {price:.{cfg['decimals']}f} (gold-api-spot)", flush=True)
                     return
-            except Exception:
-                pass # تجاهل الخطأ بصمت وانتقل لياهو
+            except Exception as spot_exc:
+                print(f"[price] {sym} spot failed ({spot_exc}) — Yahoo fallback", flush=True)
 
         price, prev_close, hi, lo = fetch_yahoo_quote(cfg["yahoo"])
         if apply_tick(sym, price, prev_close, hi, lo, "yahoo"):
             record_fetch(sym, True)
+            print(f"[price] {sym} = {price:.{cfg['decimals']}f} (yahoo)", flush=True)
         else:
             record_fetch(sym, False)
-    except Exception as e:
+            print(f"[price] {sym} rejected by bounds", flush=True)
+    except Exception as exc:
+        print(f"[price] {sym} fetch failed: {exc}", flush=True)
         record_fetch(sym, False)
 
 def _price_feed_loop():
@@ -124,12 +138,14 @@ def _price_feed_loop():
                 PRICE_POOL.submit(fetch_one_safe, sym)
         except Exception:
             pass
-        SHUTDOWN.wait(2.0) # تحديث كل ثانيتين
+        SHUTDOWN.wait(1.0)
 
 def start_price_feed():
+    """تشغيل البث في الخلفية"""
     thread = threading.Thread(target=_price_feed_loop, daemon=True)
     thread.start()
     return thread
+
 
 # --- News Calendar ---
 CALENDAR_SEED = [
