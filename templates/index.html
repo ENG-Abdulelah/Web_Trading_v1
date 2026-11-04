@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -31,145 +32,325 @@
         --bg-0: #070a10; --bg-1: #0e1420; --bg-2: #151d2e; --bg-3: #1c2740;
         --border: #263252; --text: #e8eef7; --text-dim: #8a96ad;
         --cyan: #06d6f5; --emerald: #10b981; --rose: #f43f5e; --amber: #f59e0b;
+        --violet: #8b5cf6;
     }
     * { box-sizing: border-box; }
-    body { background: var(--bg-0); color: var(--text); font-family: 'Segoe UI', Tahoma, sans-serif; }
 
-    .top-bar {
-        background: var(--bg-1); border-bottom: 1px solid var(--border);
-        padding: .85rem 1.25rem; position: sticky; top: 0; z-index: 100;
+    html, body { min-height: 100%; }
+
+    body {
+        background:
+            radial-gradient(ellipse 80% 60% at 0% 0%, rgba(6, 214, 245, 0.10) 0%, transparent 55%),
+            radial-gradient(ellipse 70% 60% at 100% 0%, rgba(139, 92, 246, 0.10) 0%, transparent 55%),
+            radial-gradient(ellipse 60% 50% at 50% 100%, rgba(16, 185, 129, 0.06) 0%, transparent 60%),
+            var(--bg-0);
+        background-attachment: fixed;
+        color: var(--text);
+        font-family: 'Segoe UI', Tahoma, sans-serif;
+        letter-spacing: 0.01em;
     }
+
+    ::-webkit-scrollbar { width: 9px; height: 9px; }
+    ::-webkit-scrollbar-track { background: var(--bg-0); }
+    ::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, var(--cyan), var(--violet));
+        border-radius: 6px; border: 2px solid var(--bg-0);
+    }
+    ::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #22d3ee, #a78bfa); }
+
+    /* ============ TOP BAR ============ */
+    .top-bar {
+        background: linear-gradient(180deg, rgba(14,20,32,0.98) 0%, rgba(14,20,32,0.88) 100%);
+        border-bottom: 1px solid var(--border);
+        padding: .9rem 1.3rem;
+        position: sticky; top: 0; z-index: 100;
+        box-shadow: 0 4px 30px rgba(0,0,0,0.55), inset 0 -1px 0 rgba(6,214,245,0.10);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+    }
+
     .brand {
         font-size: 1.15rem; font-weight: 800;
-        background: linear-gradient(90deg, var(--cyan) 0%, #8b5cf6 100%);
+        background: linear-gradient(90deg, var(--cyan) 0%, var(--violet) 50%, var(--cyan) 100%);
+        background-size: 200% auto;
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         background-clip: text;
+        animation: shimmer 5s linear infinite;
+        display: inline-flex; align-items: center; gap: .5rem;
     }
+    @keyframes shimmer { to { background-position: 200% center; } }
 
+    .brand i { -webkit-text-fill-color: var(--cyan); filter: drop-shadow(0 0 8px rgba(6,214,245,0.7)); }
+
+    /* ============ LIVE PULSE ============ */
+    @keyframes pulse-dot {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50%      { opacity: 0.45; transform: scale(1.35); }
+    }
+    .badge .bi-circle-fill { animation: pulse-dot 1.8s ease-in-out infinite; }
+
+    /* ============ TICKER ============ */
     .ticker-grid {
         display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-        gap: .65rem; margin-bottom: 1.25rem;
+        gap: .7rem; margin-bottom: 1.4rem;
     }
     .ticker-item {
-        background: var(--bg-2); border: 1px solid var(--border);
-        border-radius: 10px; padding: .65rem; text-align: center;
-        position: relative;
+        background: linear-gradient(145deg, var(--bg-2) 0%, #0f1726 100%);
+        border: 1px solid var(--border);
+        border-radius: 12px; padding: .7rem .5rem; text-align: center;
+        position: relative; overflow: hidden;
+        transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+    }
+    .ticker-item:hover {
+        transform: translateY(-3px);
+        border-color: rgba(6,214,245,0.55);
+        box-shadow: 0 10px 24px rgba(6,214,245,0.14);
     }
     .ticker-item.up::before,
     .ticker-item.down::before {
         content: ''; position: absolute; top: 0; left: 0; right: 0;
-        height: 3px; border-radius: 10px 10px 0 0;
+        height: 3px; border-radius: 12px 12px 0 0;
     }
-    .ticker-item.up::before { background: var(--emerald); }
-    .ticker-item.down::before { background: var(--rose); }
+    .ticker-item.up::before {
+        background: linear-gradient(90deg, var(--emerald), #34d399);
+        box-shadow: 0 0 12px rgba(16,185,129,0.55);
+    }
+    .ticker-item.down::before {
+        background: linear-gradient(90deg, var(--rose), #fb7185);
+        box-shadow: 0 0 12px rgba(244,63,94,0.55);
+    }
+    .ticker-item .fs-5 { letter-spacing: .02em; }
 
+    /* ============ CARDS ============ */
     .card-box {
-        background: var(--bg-1); border: 1px solid var(--border);
-        border-radius: 12px; padding: 1.1rem; margin-bottom: 1rem;
+        background: linear-gradient(160deg, var(--bg-1) 0%, #0a1019 100%);
+        border: 1px solid var(--border);
+        border-radius: 14px; padding: 1.15rem; margin-bottom: 1rem;
+        position: relative; overflow: hidden;
+        box-shadow: 0 6px 24px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.025);
+        transition: border-color .3s ease;
     }
+    .card-box::after {
+        content: '';
+        position: absolute; top: 0; left: 15%; right: 15%; height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(6,214,245,0.35), transparent);
+        pointer-events: none;
+    }
+    .card-box:hover { border-color: rgba(38,50,82,0.95); }
+
     .stat-box {
-        background: var(--bg-2); border: 1px solid var(--border);
-        border-radius: 10px; padding: .85rem; text-align: center;
+        background: linear-gradient(145deg, var(--bg-2) 0%, #0f1726 100%);
+        border: 1px solid var(--border);
+        border-radius: 12px; padding: .9rem .7rem; text-align: center;
+        position: relative; overflow: hidden;
+        transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease;
     }
+    .stat-box::after {
+        content: '';
+        position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+        width: 55%; height: 2px; border-radius: 2px;
+        background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+        opacity: 0.35;
+    }
+    .stat-box:hover {
+        transform: translateY(-2px);
+        border-color: rgba(6,214,245,0.45);
+        box-shadow: 0 8px 20px rgba(6,214,245,0.10);
+    }
+
     .sec-h {
         font-size: 1rem; font-weight: 700;
         border-bottom: 1px solid var(--border);
         padding-bottom: .6rem; margin-bottom: .9rem;
+        display: flex; align-items: center; gap: .45rem;
+    }
+    .sec-h i {
+        color: var(--cyan);
+        filter: drop-shadow(0 0 6px rgba(6,214,245,0.55));
     }
 
+    /* ============ SIGNALS ============ */
     .signal {
-        background: var(--bg-2); border: 1px solid var(--border);
-        border-radius: 12px; padding: 1rem; margin-bottom: .85rem;
+        background: linear-gradient(135deg, var(--bg-2) 0%, rgba(21,29,46,0.55) 100%);
+        border: 1px solid var(--border);
+        border-radius: 14px; padding: 1rem; margin-bottom: .85rem;
         position: relative;
+        transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease;
     }
-    .signal.buy  { border-inline-start: 4px solid var(--emerald); }
-    .signal.sell { border-inline-start: 4px solid var(--rose); }
+    .signal:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 26px rgba(0,0,0,0.35);
+    }
+    .signal.buy  {
+        border-inline-start: 4px solid var(--emerald);
+        box-shadow: -3px 0 14px -3px rgba(16,185,129,0.35), 0 6px 18px rgba(0,0,0,0.25);
+    }
+    .signal.sell {
+        border-inline-start: 4px solid var(--rose);
+        box-shadow: -3px 0 14px -3px rgba(244,63,94,0.35), 0 6px 18px rgba(0,0,0,0.25);
+    }
 
     .badge-dir {
-        padding: .3rem .65rem; border-radius: 6px;
+        padding: .3rem .65rem; border-radius: 7px;
         font-weight: 700; font-size: .75rem;
+        letter-spacing: .02em;
     }
+
     .price-row {
         display: grid; grid-template-columns: repeat(3, 1fr);
-        gap: .5rem; margin: .75rem 0;
+        gap: .5rem; margin: .8rem 0;
     }
     .price-cell {
-        background: var(--bg-0); border: 1px solid var(--border);
-        border-radius: 8px; padding: .5rem; text-align: center;
+        background: linear-gradient(145deg, rgba(7,10,16,0.85) 0%, rgba(15,20,32,0.65) 100%);
+        border: 1px solid var(--border);
+        border-radius: 10px; padding: .55rem .4rem; text-align: center;
+        transition: border-color .2s ease, background .2s ease;
     }
-    .price-cell .label { font-size: .7rem; color: var(--text-dim); }
+    .price-cell:hover {
+        border-color: rgba(6,214,245,0.35);
+        background: rgba(6,214,245,0.05);
+    }
+    .price-cell .label { font-size: .7rem; color: var(--text-dim); letter-spacing: .02em; }
     .price-cell .value { font-size: .95rem; font-weight: 700; }
 
+    /* ============ COLORS ============ */
     .c-pos { color: var(--emerald) !important; }
     .c-neg { color: var(--rose) !important; }
     .c-dim { color: var(--text-dim) !important; }
     .c-cyan { color: var(--cyan) !important; }
 
+    /* ============ BUTTONS ============ */
     .btn-approve {
-        background: var(--emerald); border: none; color: #fff;
-        font-weight: 700; border-radius: 8px; padding: .55rem;
-        transition: .15s;
+        background: linear-gradient(135deg, var(--emerald) 0%, #059669 100%);
+        border: none; color: #fff; font-weight: 700;
+        border-radius: 9px; padding: .6rem .8rem;
+        transition: all .2s ease;
+        box-shadow: 0 4px 14px rgba(16,185,129,0.30);
+        position: relative; overflow: hidden;
     }
-    .btn-approve:hover { background: #059669; color: #fff; }
-    .btn-reject {
-        background: transparent; border: 1px solid var(--rose);
-        color: var(--rose); font-weight: 700; border-radius: 8px;
-        padding: .55rem; transition: .15s;
+    .btn-approve:hover {
+        background: linear-gradient(135deg, #34d399 0%, #047857 100%);
+        color: #fff;
+        transform: translateY(-1px);
+        box-shadow: 0 8px 22px rgba(16,185,129,0.45);
     }
-    .btn-reject:hover { background: var(--rose); color: #fff; }
+    .btn-approve:active { transform: translateY(0); }
 
+    .btn-reject {
+        background: transparent;
+        border: 1px solid var(--rose);
+        color: var(--rose); font-weight: 700;
+        border-radius: 9px; padding: .6rem .8rem;
+        transition: all .2s ease;
+    }
+    .btn-reject:hover {
+        background: var(--rose); color: #fff;
+        transform: translateY(-1px);
+        box-shadow: 0 8px 20px rgba(244,63,94,0.35);
+    }
+
+    .btn-outline-info {
+        border-color: rgba(6,214,245,0.5) !important;
+        color: var(--cyan) !important;
+        transition: all .2s ease;
+    }
+    .btn-outline-info:hover {
+        background: rgba(6,214,245,0.15) !important;
+        color: var(--cyan) !important;
+        border-color: var(--cyan) !important;
+        box-shadow: 0 0 14px rgba(6,214,245,0.25);
+    }
+
+    /* ============ BIAS ============ */
     .bias-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
-        gap: .4rem;
+        gap: .5rem;
     }
     .bias-box {
-        background: var(--bg-0); border: 1px solid var(--border);
-        border-radius: 8px; padding: .6rem; text-align: center;
+        background: linear-gradient(145deg, var(--bg-0) 0%, rgba(15,20,32,0.55) 100%);
+        border: 1px solid var(--border);
+        border-radius: 10px; padding: .65rem .5rem; text-align: center;
+        transition: transform .2s ease, border-color .2s ease;
+    }
+    .bias-box:hover {
+        border-color: rgba(6,214,245,0.35);
+        transform: scale(1.04);
     }
 
+    /* ============ TABLES ============ */
     .table-dark { --bs-table-bg: transparent; color: var(--text); font-size: 0.8rem; }
     .table-dark th, .table-dark td { border-color: var(--border); }
+    .table-dark tbody tr { transition: background .2s ease; }
+    .table-dark tbody tr:hover { background: rgba(6,214,245,0.05); }
 
+    /* ============ NEWS ============ */
     .news-link {
         color: var(--text); text-decoration: none; transition: .15s;
     }
     .news-link:hover { color: var(--cyan); }
 
+    /* ============ FORMS ============ */
     .form-control, .form-select {
-        background: var(--bg-0) !important;
+        background: rgba(7,10,16,0.85) !important;
         border: 1px solid var(--border) !important;
         color: var(--text) !important;
-        border-radius: 8px !important;
+        border-radius: 9px !important;
+        transition: all .2s ease !important;
     }
     .form-control:focus, .form-select:focus {
         border-color: var(--cyan) !important;
-        box-shadow: 0 0 0 2px rgba(6, 214, 245, .2) !important;
+        box-shadow: 0 0 0 3px rgba(6,214,245,0.16) !important;
+        background: rgba(7,10,16,1) !important;
     }
-    .form-label { color: var(--text-dim); font-size: .8rem; font-weight: 600; margin-bottom: .3rem; }
+    .form-label { color: var(--text-dim); font-size: .8rem; font-weight: 600; margin-bottom: .35rem; }
     .form-check-input { background-color: var(--bg-0); border-color: var(--border); }
     .form-check-input:checked { background-color: var(--cyan); border-color: var(--cyan); }
+    .form-check-input:focus { box-shadow: 0 0 0 3px rgba(6,214,245,0.16); border-color: var(--cyan); }
 
+    /* ============ TF CHIPS ============ */
     .tf-chip {
         display: inline-block;
-        padding: .35rem .75rem;
+        padding: .35rem .8rem;
         border-radius: 20px;
         border: 1px solid var(--border);
         background: var(--bg-0);
         cursor: pointer;
         font-size: .8rem;
         font-weight: 700;
-        margin: 0 .25rem .3rem 0;
-        transition: .15s;
+        margin: 0 .25rem .35rem 0;
+        transition: all .2s ease;
         user-select: none;
     }
     .tf-chip.active {
-        background: var(--cyan);
+        background: linear-gradient(135deg, var(--cyan) 0%, #0891b2 100%);
         color: var(--bg-0);
         border-color: var(--cyan);
+        box-shadow: 0 0 16px rgba(6,214,245,0.45);
     }
     .tf-chip:hover { border-color: var(--cyan); }
 
+    /* ============ TOAST ============ */
+    #toast-container > div {
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(255,255,255,0.14);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.55);
+    }
+
+    /* ============ EMPTY STATE ICON FLOAT ============ */
+    @keyframes float-y {
+        0%, 100% { transform: translateY(0); }
+        50%      { transform: translateY(-8px); }
+    }
+    .empty-icon {
+        display: inline-block;
+        font-size: 3rem; opacity: 0.85;
+        filter: drop-shadow(0 0 22px currentColor);
+        animation: float-y 3.2s ease-in-out infinite;
+    }
+
+    /* ============ TOAST ANIMATIONS ============ */
     @keyframes slideInRight {
         from { transform: translateX(100%); opacity: 0; }
         to { transform: translateX(0); opacity: 1; }
@@ -215,7 +396,7 @@
 
         <div class="d-flex align-items-center gap-3 mt-1">
             <div class="c-dim small">{{ now }}</div>
-            <button class="btn btn-sm btn-outline-info" onclick="toggleLanguage()" style="border-radius:8px; font-size:0.75rem;">
+            <button class="btn btn-sm btn-outline-info" onclick="toggleLanguage()" style="border-radius:9px; font-size:0.75rem;">
                 <i class="bi bi-translate"></i> <span id="lang-btn-text">EN</span>
             </button>
         </div>
@@ -302,28 +483,28 @@
                 {% else %}
                     <div class="text-center py-5">
                         {% if not market.is_open %}
-                            <i class="bi bi-moon-stars text-warning" style="font-size: 3rem; opacity: 0.8;"></i>
+                            <i class="bi bi-moon-stars text-warning empty-icon"></i>
                             <h5 class="mt-3 text-warning fw-bold">السوق مغلق حالياً (عطلة نهاية الأسبوع)</h5>
                             <p class="c-dim small mb-3 px-3">
                                 لحماية رأس مالك، يتوقف النظام عن التحليل وقت إغلاق السوق. 
                                 سيبدأ التحليل التلقائي وتوليد التوصيات بعد <b>5 دقائق</b> من افتتاح السوق.
                             </p>
                             {% if market.next_open_ts %}
-                            <div class="p-3 mx-auto rounded border border-secondary" style="background: var(--bg-0); max-width: 300px;">
+                            <div class="p-3 mx-auto rounded border border-secondary" style="background: var(--bg-0); max-width: 300px; box-shadow: 0 8px 24px rgba(0,0,0,0.35);">
                                 <div class="small c-dim mb-1">يتبقى لفتح السوق:</div>
                                 <div class="fs-4 fw-bold c-cyan" id="empty-countdown">--:--:--</div>
                             </div>
                             {% endif %}
                             
                         {% elif market.news_blackout %}
-                            <i class="bi bi-newspaper text-danger" style="font-size: 3rem; opacity: 0.8;"></i>
+                            <i class="bi bi-newspaper text-danger empty-icon"></i>
                             <h5 class="mt-3 text-danger fw-bold">حظر أخبار اقتصادية</h5>
                             <p class="c-dim small mb-0 px-3">
                                 يوجد خبر مؤثر جداً ({{ market.news_blackout.title }}). النظام يوقف التداول لتجنب التقلبات العشوائية.
                             </p>
                             
                         {% else %}
-                            <i class="bi bi-search text-success" style="font-size: 3rem; opacity: 0.8;"></i>
+                            <i class="bi bi-search text-success empty-icon"></i>
                             <h5 class="mt-3 text-success fw-bold">السوق مفتوح والنظام يحلل...</h5>
                             <p class="c-dim small mb-0 px-3">
                                 النظام يراقب 20 استراتيجية ICT عبر 6 أزواج. سيتم عرض التوصية فور تحقق شروط الدخول الآمنة (Score عالي + R:R مناسب).
@@ -454,7 +635,7 @@
                             <span class="badge {% if n.impact == 'HIGH' %}bg-danger{% else %}bg-warning text-dark{% endif %}" style="font-size:.55rem;">●</span>
                             <span class="text-white">{{ n.event_ar }} ({{ n.currency }})</span>
                         </div>
-                        <div class="c-dim">{{ n.when_str }}</div>
+                        <div class="c-dim text-start" style="min-width: 100px;">{{ n.when_str }}</div>
                     </div>
                     {% endfor %}
                 {% else %}
@@ -481,7 +662,7 @@
                                 <td class="border-0 text-center">
                                     <div class="d-flex align-items-center justify-content-center gap-1">
                                         <div class="progress-custom" style="width: 40px; background: #21262d; height: 4px; border-radius: 2px;">
-                                            <div class="bar" style="width: {{ (s.weight / 1.5 * 100)|round(0) }}%; height: 100%; background: var(--cyan); border-radius: 2px;"></div>
+                                            <div class="bar" style="width: {{ (s.weight / 1.5 * 100)|round(0) }}%; height: 100%; background: linear-gradient(90deg, var(--cyan), var(--violet)); border-radius: 2px;"></div>
                                         </div>
                                         <span class="c-dim">{{ '%.2f'|format(s.weight) }}</span>
                                     </div>
@@ -697,7 +878,9 @@ async function api(url, method, body) {
 function showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
-    const bg = type === 'success' ? 'var(--emerald)' : 'var(--rose)';
+    const bg = type === 'success'
+        ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+        : 'linear-gradient(135deg, #f43f5e 0%, #be123c 100%)';
     const icon = type === 'success' ? 'check-circle' : 'exclamation-circle';
     
     toast.className = 'shadow-lg rounded px-4 py-3 text-white fw-bold';
@@ -750,11 +933,11 @@ async function runAnalysis() {
 }
 
 // ==========================================
-// LIVE PRICES POLLING (Every 10 seconds)
+// LIVE PRICES POLLING (Every 3 seconds)
 // ==========================================
 async function refreshPrices() {
     try {
-        const res = await fetch('/api/live_prices');
+        const res = await fetch('/api/live_prices'); // 👈 المسار الصحيح
         const data = await res.json();
         
         for (const [sym, p] of Object.entries(data)) {
@@ -763,20 +946,23 @@ async function refreshPrices() {
             const changeEl = document.getElementById('change-' + key);
             const tickerEl = document.getElementById('ticker-' + key);
             
-            if (priceEl) priceEl.innerText = p.price;
-            if (changeEl && tickerEl) {
-                const isUp = p.change_pct > 0;
-                const isDown = p.change_pct < 0;
+            if (priceEl && p.price) {
+                priceEl.innerText = p.price.toFixed(2);
                 
-                changeEl.innerText = (isUp ? '▲' : isDown ? '▼' : '—') + ' ' + (p.change_pct > 0 ? '+' : '') + p.change_pct + '%';
-                changeEl.className = 'small ' + (isUp ? 'c-pos' : isDown ? 'c-neg' : 'c-dim');
-                
-                tickerEl.className = 'ticker-item ' + (isUp ? 'up' : isDown ? 'down' : '');
+                if (changeEl && tickerEl) {
+                    const isUp = p.change_pct > 0;
+                    const isDown = p.change_pct < 0;
+                    
+                    changeEl.innerText = (isUp ? '▲' : isDown ? '▼' : '—') + ' ' + (p.change_pct > 0 ? '+' : '') + p.change_pct + '%';
+                    changeEl.className = 'small ' + (isUp ? 'c-pos' : isDown ? 'c-neg' : 'c-dim');
+                    tickerEl.className = 'ticker-item ' + (isUp ? 'up' : isDown ? 'down' : '');
+                }
             }
         }
     } catch (e) { console.error("Price update failed", e); }
 }
-setInterval(refreshPrices, 10000);
+// التحديث كل 3 ثوانٍ
+setInterval(refreshPrices, 3000);
 
 // ==========================================
 // COUNTDOWN TIMER (Top Bar)
