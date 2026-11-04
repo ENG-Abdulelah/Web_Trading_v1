@@ -196,7 +196,7 @@ def api_live_prices():
         for sym, data in PRICES.items():
             if data["price"] > 0:
                 chg = 0.0
-                if data["prev_close"] > 0:
+                if data.get("prev_close", 0) > 0:
                     chg = ((data["price"] - data["prev_close"]) / data["prev_close"]) * 100
                 out[sym] = {
                     "price": data["price"],
@@ -213,7 +213,7 @@ def api_prices():
         for sym, data in PRICES.items():
             if data["price"] > 0:
                 chg = 0.0
-                if data["prev_close"] > 0:
+                if data.get("prev_close", 0) > 0:
                     chg = ((data["price"] - data["prev_close"]) / data["prev_close"]) * 100
                 out[sym] = {
                     "price": data["price"],
@@ -810,18 +810,13 @@ def index():
     stats = DB.get_stats()
     strategy_stats = DB.get_filter_stats()
 
-    # جلب الأسعار الحالية بسرعة من الذاكرة (بدون اتصال بالإنترنت)
-    from price_feed import PRICES
-    live_prices = {}
-    for sym, d in PRICES.items():
-        if d["price"] > 0:
-            chg = 0.0
-            if d["prev_close"] > 0:
-                chg = ((d["price"] - d["prev_close"]) / d["prev_close"]) * 100
-            live_prices[sym] = {
-                "price": d["price"],
-                "change_pct": round(chg, 2),
-            }
+    from price_feed import PRICES, PRICE_LOCK
+    with PRICE_LOCK:
+        live_prices = {
+            sym: {"price": d["price"]}
+            for sym, d in PRICES.items()
+            if d["price"] > 0
+        }
 
     return render_template(
         "index.html",
