@@ -1,4 +1,3 @@
-```python
 # analysis_engine.py
 """
 ICT/SMC Analysis Engine — 20 strategies on real OHLCV data.
@@ -1204,4 +1203,3 @@ def _normalize_news(raw: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "actual": item.get("actual", ""),
         })
     return out
-```
