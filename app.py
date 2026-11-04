@@ -1,4 +1,3 @@
-
 # app.py
 """
 Web Trading Bot — Personal Trading Analyst (Flask)
@@ -191,14 +190,34 @@ def set_lang(l):
 # =============================================================================
 @app.route("/api/live_prices")
 def api_live_prices():
-    from price_feed import PRICES
-    return jsonify(PRICES)
+    from price_feed import PRICES, PRICE_LOCK
+    with PRICE_LOCK:
+        out = {}
+        for sym, data in PRICES.items():
+            chg = 0.0
+            if data.get("prev_close", 0) > 0:
+                chg = ((data["price"] - data["prev_close"]) / data["prev_close"]) * 100
+            out[sym] = {
+                "price": data.get("price", 0.0),
+                "change_pct": round(chg, 2)
+            }
+        return jsonify(out)
 
 
 @app.route("/api/prices")
 def api_prices():
-    from price_feed import PRICES
-    return jsonify(PRICES)
+    from price_feed import PRICES, PRICE_LOCK
+    with PRICE_LOCK:
+        out = {}
+        for sym, data in PRICES.items():
+            chg = 0.0
+            if data.get("prev_close", 0) > 0:
+                chg = ((data["price"] - data["prev_close"]) / data["prev_close"]) * 100
+            out[sym] = {
+                "price": data.get("price", 0.0),
+                "change_pct": round(chg, 2)
+            }
+        return jsonify(out)
 
 
 # =============================================================================
@@ -792,6 +811,9 @@ def index():
     stats = DB.get_stats()
     strategy_stats = DB.get_filter_stats()
 
+    cot_reports = fetch_cot_reports()
+    cpi_data = fetch_cpi_data()
+
     return render_template(
         "index.html",
         market=state,
@@ -804,6 +826,8 @@ def index():
         fundamental_biases=DB.get_all_fundamental_bias(),
         news=build_calendar(),
         live_prices=live_prices,
+        cot_reports=cot_reports,
+        cpi_data=cpi_data,
         settings=USER_SETTINGS,
         symbols=SYMBOLS,
         now=utcnow().strftime("%Y-%m-%d %H:%M UTC"),
@@ -993,23 +1017,20 @@ def api_settings():
 # =============================================================================
 # BACKGROUND STARTUP (Gunicorn imports this module)
 # =============================================================================
-def _delayed_start_scheduler():
-    import time as _t
-    _t.sleep(8)
-    try:
-        start_scheduler()
-        logger.info("Scheduler auto-started on import (delayed)")
-    except Exception as e:
-        logger.error("Failed to start scheduler on import: %s", e)
+import threading
+_bg_started = False
+_bg_lock = threading.Lock()
 
+@app.before_request
+def ensure_background_tasks():
+    global _bg_started
+    if not _bg_started:
+        with _bg_lock:
+            if not _bg_started:
+                logger.info("Starting background threads inside worker process...")
+                start_price_feed()
+                start_scheduler()
+                _bg_started = True
 
-threading.Thread(target=_delayed_start_scheduler, daemon=True).start()
-
-
-try:
-    start_price_feed()
-    logger.info("Price feed background thread started.")
-except Exception as e:
-    logger.error("Failed to start price feed: %s", e)
-
-# لا تضع app.run() هنا لأن Gunicorn هو من سيشغل السيرفر
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
