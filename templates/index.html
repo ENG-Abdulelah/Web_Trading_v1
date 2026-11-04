@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -10,21 +9,12 @@
 (function () {
     var lang = localStorage.getItem("lang") || "ar";
     document.documentElement.setAttribute("lang", lang);
-    document.documentElement.setAttribute("dir", lang === "ar" ? "rtl" : "ltr");
+    document.documentElement.setAttribute("dir", "rtl");
 })();
 </script>
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css"
       rel="stylesheet" id="bootstrap-css">
-<script>
-(function () {
-    var lang = localStorage.getItem("lang") || "ar";
-    if (lang !== "ar") {
-        var el = document.getElementById("bootstrap-css");
-        if (el) el.href = "https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css";
-    }
-})();
-</script>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
 
 <style>
@@ -58,7 +48,6 @@
     }
     ::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #22d3ee, #a78bfa); }
 
-    /* ============ TOP BAR ============ */
     .top-bar {
         background: linear-gradient(180deg, rgba(14,20,32,0.98) 0%, rgba(14,20,32,0.88) 100%);
         border-bottom: 1px solid var(--border);
@@ -82,14 +71,12 @@
 
     .brand i { -webkit-text-fill-color: var(--cyan); filter: drop-shadow(0 0 8px rgba(6,214,245,0.7)); }
 
-    /* ============ LIVE PULSE ============ */
     @keyframes pulse-dot {
         0%, 100% { opacity: 1; transform: scale(1); }
         50%      { opacity: 0.45; transform: scale(1.35); }
     }
     .badge .bi-circle-fill { animation: pulse-dot 1.8s ease-in-out infinite; }
 
-    /* ============ TICKER ============ */
     .ticker-grid {
         display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
         gap: .7rem; margin-bottom: 1.4rem;
@@ -121,7 +108,6 @@
     }
     .ticker-item .fs-5 { letter-spacing: .02em; }
 
-    /* ============ CARDS ============ */
     .card-box {
         background: linear-gradient(160deg, var(--bg-1) 0%, #0a1019 100%);
         border: 1px solid var(--border);
@@ -169,7 +155,6 @@
         filter: drop-shadow(0 0 6px rgba(6,214,245,0.55));
     }
 
-    /* ============ SIGNALS ============ */
     .signal {
         background: linear-gradient(135deg, var(--bg-2) 0%, rgba(21,29,46,0.55) 100%);
         border: 1px solid var(--border);
@@ -213,13 +198,11 @@
     .price-cell .label { font-size: .7rem; color: var(--text-dim); letter-spacing: .02em; }
     .price-cell .value { font-size: .95rem; font-weight: 700; }
 
-    /* ============ COLORS ============ */
     .c-pos { color: var(--emerald) !important; }
     .c-neg { color: var(--rose) !important; }
     .c-dim { color: var(--text-dim) !important; }
     .c-cyan { color: var(--cyan) !important; }
 
-    /* ============ BUTTONS ============ */
     .btn-approve {
         background: linear-gradient(135deg, var(--emerald) 0%, #059669 100%);
         border: none; color: #fff; font-weight: 700;
@@ -261,7 +244,6 @@
         box-shadow: 0 0 14px rgba(6,214,245,0.25);
     }
 
-    /* ============ BIAS ============ */
     .bias-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
@@ -278,19 +260,16 @@
         transform: scale(1.04);
     }
 
-    /* ============ TABLES ============ */
     .table-dark { --bs-table-bg: transparent; color: var(--text); font-size: 0.8rem; }
     .table-dark th, .table-dark td { border-color: var(--border); }
     .table-dark tbody tr { transition: background .2s ease; }
     .table-dark tbody tr:hover { background: rgba(6,214,245,0.05); }
 
-    /* ============ NEWS ============ */
     .news-link {
         color: var(--text); text-decoration: none; transition: .15s;
     }
     .news-link:hover { color: var(--cyan); }
 
-    /* ============ FORMS ============ */
     .form-control, .form-select {
         background: rgba(7,10,16,0.85) !important;
         border: 1px solid var(--border) !important;
@@ -308,7 +287,6 @@
     .form-check-input:checked { background-color: var(--cyan); border-color: var(--cyan); }
     .form-check-input:focus { box-shadow: 0 0 0 3px rgba(6,214,245,0.16); border-color: var(--cyan); }
 
-    /* ============ TF CHIPS ============ */
     .tf-chip {
         display: inline-block;
         padding: .35rem .8rem;
@@ -330,7 +308,6 @@
     }
     .tf-chip:hover { border-color: var(--cyan); }
 
-    /* ============ TOAST ============ */
     #toast-container > div {
         backdrop-filter: blur(10px);
         -webkit-backdrop-filter: blur(10px);
@@ -338,7 +315,6 @@
         box-shadow: 0 10px 30px rgba(0,0,0,0.55);
     }
 
-    /* ============ EMPTY STATE ICON FLOAT ============ */
     @keyframes float-y {
         0%, 100% { transform: translateY(0); }
         50%      { transform: translateY(-8px); }
@@ -350,7 +326,6 @@
         animation: float-y 3.2s ease-in-out infinite;
     }
 
-    /* ============ TOAST ANIMATIONS ============ */
     @keyframes slideInRight {
         from { transform: translateX(100%); opacity: 0; }
         to { transform: translateX(0); opacity: 1; }
@@ -386,11 +361,8 @@
                     <span class="badge bg-secondary">السبب: {{ market.blocked_reason }}</span>
                 {% endif %}
                 
-                <span class="badge bg-secondary"><i class="bi bi-clock"></i> الجلسة: {{ market.session_name }}</span>
-                
-                <span class="badge bg-{{ market.liq_color }} {% if market.liq_color == 'warning' %}text-dark{% endif %}">
-                    <i class="bi bi-droplet-half"></i> <span data-i18n="liquidity">السيولة</span>: {{ market.liquidity }}
-                </span>
+                <span class="badge bg-secondary"><i class="bi bi-clock"></i> <span data-i18n="session">الجلسة</span>: <span id="session-val" data-ar="{{ market.session_name }}" data-en="{{ market.session_name }}">{{ market.session_name }}</span></span>
+                <span class="badge bg-{{ market.liq_color }} {% if market.liq_color == 'warning' %}text-dark{% endif %}"><i class="bi bi-droplet-half"></i> <span data-i18n="liquidity">السيولة</span>: <span id="liquidity-val" data-ar="{{ market.liquidity }}" data-en="{{ market.liquidity }}">{{ market.liquidity }}</span></span>
             </div>
         </div>
 
@@ -412,12 +384,8 @@
             {% set p = live_prices.get(sym) if live_prices else None %}
             <div class="ticker-item" id="ticker-{{ sym.replace('/', '') }}">
                 <div class="c-dim small fw-bold">{{ sym }}</div>
-                <div class="fs-5 fw-bold mt-1" id="price-{{ sym.replace('/', '') }}">
-                    {{ p.price if p else '—' }}
-                </div>
-                <div class="small c-dim" id="change-{{ sym.replace('/', '') }}">
-                    — 0.00%
-                </div>
+                <div class="fs-5 fw-bold mt-1" id="price-{{ sym.replace('/', '') }}">{{ p.price if p else '—' }}</div>
+                <div class="small c-dim" id="change-{{ sym.replace('/', '') }}">— 0.00%</div>
             </div>
         {% endfor %}
     </div>
@@ -564,10 +532,10 @@
             </div>
 
             <div class="card-box">
-                <div class="sec-h"><i class="bi bi-file-earmark-bar-graph"></i> تقارير COT و CPI</div>
+                <div class="sec-h"><i class="bi bi-file-earmark-bar-graph"></i> <span data-i18n="reports">تقارير COT و CPI</span></div>
                 
                 <div class="mb-3 bg-dark p-3 rounded border border-secondary">
-                    <h6 class="text-info mb-2 fw-bold">CPI (التضخم الأمريكي)</h6>
+                    <h6 class="text-info mb-2 fw-bold" data-i18n="cpi_title">CPI (التضخم الأمريكي)</h6>
                     {% if cpi_data %}
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <span class="c-dim small">الفترة: {{ cpi_data.period }}</span>
@@ -581,12 +549,12 @@
                             {% endif %}
                         </div>
                     {% else %}
-                        <div class="c-dim small">لا تتوفر بيانات CPI حالياً.</div>
+                        <div class="c-dim small" data-i18n="no_data">لا تتوفر بيانات حالياً.</div>
                     {% endif %}
                 </div>
 
                 <div>
-                    <h6 class="text-info mb-2 fw-bold">COT (مراكز المؤسسات الكبرى)</h6>
+                    <h6 class="text-info mb-2 fw-bold" data-i18n="cot_title">COT (مراكز المؤسسات الكبرى)</h6>
                     {% if cot_reports %}
                         <div class="table-responsive rounded border border-secondary">
                             <table class="table table-dark table-sm mb-0 text-center" style="font-size:.75rem;">
@@ -619,7 +587,7 @@
                             </table>
                         </div>
                     {% else %}
-                        <div class="c-dim small">لا تتوفر بيانات COT حالياً.</div>
+                        <div class="c-dim small" data-i18n="no_data">لا تتوفر بيانات حالياً.</div>
                     {% endif %}
                 </div>
             </div>
@@ -634,10 +602,12 @@
                     <div class="d-flex justify-content-between border-bottom border-secondary py-2 small" style="border-style:dashed !important;">
                         <div>
                             <span class="badge {% if n.impact == 'HIGH' %}bg-danger{% else %}bg-warning text-dark{% endif %}" style="font-size:.55rem;">●</span>
-                            <span class="text-white">{{ n.event_ar }} ({{ n.currency }})</span>
+                            <span class="text-white news-title" data-ar="{{ n.event_ar }}" data-en="{{ n.event_en }}">{{ n.event_ar }}</span> ({{ n.currency }})
                         </div>
                         <div class="c-dim text-start" style="min-width: 100px;">{{ n.when_str }}</div>
                     </div>
+                    {% else %}
+                    <div class="c-dim small" data-i18n="no_news">لا توجد أخبار.</div>
                     {% endfor %}
                 {% else %}
                     <div class="c-dim small" data-i18n="no_news">لا توجد أخبار.</div>
@@ -735,40 +705,81 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-// --- LANGUAGE TOGGLE (No Direction Change) ---
 const i18n = {
     "ar": {
-        "market_open": "السوق مفتوح", "market_closed": "السوق مغلق", "liquidity": "السيولة",
+        "market_open": "السوق مفتوح", "market_closed": "السوق مغلق",
+        "session": "الجلسة", "liquidity": "السيولة",
         "live_prices": "الأسعار الحية", "signals": "توصيات ICT", "analyze_now": "تحليل الآن",
         "no_signals": "لا توصيات حالياً", "entry": "الدخول", "sl": "وقف الخسارة", "tp": "الهدف",
         "approve": "موافقة وتنفيذ", "reject": "رفض", "open_pos": "المراكز المفتوحة",
-        "fundamental": "التحليل الأساسي", "news": "الأخبار اللحظية"
+        "fundamental": "التحليل الأساسي", "news": "الأخبار اللحظية",
+        "reports": "تقارير COT و CPI", "cpi_title": "CPI (التضخم الأمريكي)", "cot_title": "COT (مراكز المؤسسات الكبرى)", "no_data": "لا تتوفر بيانات حالياً.",
+        "strategies": "أداء الاستراتيجيات", "strat_name": "الاستراتيجية", "strat_weight": "الوزن", "strat_wl": "W/L", "strat_winrate": "النجاح",
+        "settings": "الإعدادات", "capital": "رأس المال ($)", "risk": "المخاطرة (%)", "save": "حفظ الإعدادات", "no_news": "لا توجد أخبار."
     },
     "en": {
-        "market_open": "Market Open", "market_closed": "Market Closed", "liquidity": "Liquidity",
+        "market_open": "Market Open", "market_closed": "Market Closed",
+        "session": "Session", "liquidity": "Liquidity",
         "live_prices": "Live Prices", "signals": "ICT Signals", "analyze_now": "Analyze Now",
         "no_signals": "No signals currently", "entry": "Entry", "sl": "Stop Loss", "tp": "Target",
         "approve": "Approve & Execute", "reject": "Reject", "open_pos": "Open Positions",
-        "fundamental": "Fundamental Bias", "news": "Live News"
+        "fundamental": "Fundamental Bias", "news": "Live News",
+        "reports": "CPI & COT Reports", "cpi_title": "CPI (US Inflation)", "cot_title": "COT (Institutional Positioning)", "no_data": "No data available currently.",
+        "strategies": "Strategy Performance", "strat_name": "Strategy", "strat_weight": "Weight", "strat_wl": "W/L", "strat_winrate": "Win Rate",
+        "settings": "Settings", "capital": "Capital ($)", "risk": "Risk (%)", "save": "Save Settings", "no_news": "No recent news."
     }
 };
 
-let currentLang = "ar";
+let currentLang = localStorage.getItem("lang") || "ar";
 
-function toggleLanguage() {
-    currentLang = currentLang === "ar" ? "en" : "ar";
-    
-    // تغيير نص الزر فقط (بدون تغيير اتجاه الصفحة)
-    document.getElementById("lang-btn-text").innerText = currentLang === "ar" ? "EN" : "AR";
-    
-    // ترجمة النصوص
+function applyLanguage() {
+    // 1. ترجمة العناصر الثابتة
     document.querySelectorAll("[data-i18n]").forEach(el => {
         const key = el.getAttribute("data-i18n");
         if (i18n[currentLang][key]) {
             el.innerText = i18n[currentLang][key];
         }
     });
+
+    // 2. ترجمة العناصر الديناميكية (الجلسة، السيولة، الأخبار)
+    document.querySelectorAll("#session-val, #liquidity-val, .news-title").forEach(el => {
+        const arText = el.getAttribute("data-ar");
+        const enText = el.getAttribute("data-en");
+        
+        if (arText && enText && arText !== enText) {
+            el.innerText = currentLang === "ar" ? arText : enText;
+        } else if (el.id === "session-val" || el.id === "liquidity-val") {
+            let text = el.innerText;
+            if (currentLang === "en") {
+                if (text.includes("سيدني")) el.innerText = text.replace("سيدني", "Sydney");
+                if (text.includes("نيويورك")) el.innerText = text.replace("نيويورك", "New York");
+                if (text.includes("لندن")) el.innerText = text.replace("لندن", "London");
+                if (text.includes("طوكيو")) el.innerText = text.replace("طوكيو", "Tokyo");
+                if (text.includes("متوسطة")) el.innerText = text.replace("متوسطة", "Medium");
+                if (text.includes("قوية جداً")) el.innerText = text.replace("قوية جداً", "Very High");
+                if (text.includes("مغلقة")) el.innerText = text.replace("مغلقة", "Closed");
+            } else {
+                if (text.includes("Sydney")) el.innerText = text.replace("Sydney", "سيدني");
+                if (text.includes("New York")) el.innerText = text.replace("New York", "نيويورك");
+                if (text.includes("London")) el.innerText = text.replace("London", "لندن");
+                if (text.includes("Tokyo")) el.innerText = text.replace("Tokyo", "طوكيو");
+                if (text.includes("Medium")) el.innerText = text.replace("Medium", "متوسطة");
+                if (text.includes("Very High")) el.innerText = text.replace("Very High", "قوية جداً");
+                if (text.includes("Closed")) el.innerText = text.replace("Closed", "مغلقة");
+            }
+        }
+    });
+
+    document.getElementById("lang-btn-text").innerText = currentLang === "ar" ? "EN" : "AR";
 }
+
+function toggleLanguage() {
+    currentLang = currentLang === "ar" ? "en" : "ar";
+    localStorage.setItem("lang", currentLang);
+    applyLanguage();
+}
+
+document.addEventListener("DOMContentLoaded", applyLanguage);
 
 async function api(url, method, body) {
     method = method || "GET";
@@ -839,7 +850,7 @@ async function runAnalysis() {
 }
 
 // ==========================================
-// LIVE PRICES POLLING (Every 2 seconds)
+// LIVE PRICES POLLING
 // ==========================================
 async function refreshPrices() {
     try {
@@ -854,10 +865,7 @@ async function refreshPrices() {
             const tickerEl = document.getElementById('ticker-' + key);
 
             if (priceEl && p && p.price) {
-                // تحديث السعر
                 priceEl.innerText = parseFloat(p.price).toFixed(2);
-                
-                // تحديث نسبة التغير
                 if (changeEl && tickerEl) {
                     const isUp = p.change_pct > 0;
                     const isDown = p.change_pct < 0;
@@ -867,9 +875,10 @@ async function refreshPrices() {
                 }
             }
         }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Price update failed", e); }
 }
-setInterval(refreshPrices, 2000); // تحديث كل ثانيتين
+setInterval(refreshPrices, 2000);
+refreshPrices();
 
 // ==========================================
 // COUNTDOWN TIMER (Top Bar)
