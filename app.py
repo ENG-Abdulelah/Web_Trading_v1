@@ -198,9 +198,14 @@ def api_live_prices():
             price = data.get("price", 0.0)
             prev_close = data.get("prev_close", 0.0)
             
+            # 👇 حساب نسبة التغير (إذا لم يوجد prev_close نستخدم سعر الفتح)
             chg = 0.0
-            if prev_close > 0 and price > 0:
-                chg = ((price - prev_close) / prev_close) * 100
+            if price > 0:
+                if prev_close > 0:
+                    chg = ((price - prev_close) / prev_close) * 100
+                else:
+                    # حركة تقريبية للعرض فقط إذا لم يتوفر سعر إغلاق
+                    chg = ((price - PRICES[sym].get("history", [price])[0]) / price) * 100 if PRICES[sym].get("history") else 0.0
                 
             out[sym] = {
                 "price": price,
@@ -219,8 +224,11 @@ def api_prices():
             prev_close = data.get("prev_close", 0.0)
             
             chg = 0.0
-            if prev_close > 0 and price > 0:
-                chg = ((price - prev_close) / prev_close) * 100
+            if price > 0:
+                if prev_close > 0:
+                    chg = ((price - prev_close) / prev_close) * 100
+                else:
+                    chg = ((price - PRICES[sym].get("history", [price])[0]) / price) * 100 if PRICES[sym].get("history") else 0.0
                 
             out[sym] = {
                 "price": price,
