@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -361,8 +362,8 @@
                     <span class="badge bg-secondary">السبب: {{ market.blocked_reason }}</span>
                 {% endif %}
                 
-                <span class="badge bg-secondary"><i class="bi bi-clock"></i> <span data-i18n="session">الجلسة</span>: <span id="session-val" data-ar="{{ market.session_name }}" data-en="{{ market.session_name }}">{{ market.session_name }}</span></span>
-                <span class="badge bg-{{ market.liq_color }} {% if market.liq_color == 'warning' %}text-dark{% endif %}"><i class="bi bi-droplet-half"></i> <span data-i18n="liquidity">السيولة</span>: <span id="liquidity-val" data-ar="{{ market.liquidity }}" data-en="{{ market.liquidity }}">{{ market.liquidity }}</span></span>
+                <span class="badge bg-secondary"><i class="bi bi-clock"></i> <span data-i18n="session">الجلسة</span>: <span id="session-val">{{ market.session_name }}</span></span>
+                <span class="badge bg-{{ market.liq_color }} {% if market.liq_color == 'warning' %}text-dark{% endif %}"><i class="bi bi-droplet-half"></i> <span data-i18n="liquidity">السيولة</span>: <span id="liquidity-val">{{ market.liquidity }}</span></span>
             </div>
         </div>
 
@@ -384,8 +385,13 @@
             {% set p = live_prices.get(sym) if live_prices else None %}
             <div class="ticker-item" id="ticker-{{ sym.replace('/', '') }}">
                 <div class="c-dim small fw-bold">{{ sym }}</div>
-                <div class="fs-5 fw-bold mt-1" id="price-{{ sym.replace('/', '') }}">{{ p.price if p else '—' }}</div>
-                <div class="small c-dim" id="change-{{ sym.replace('/', '') }}">— 0.00%</div>
+                <!-- هذا السطر يعرض السعر فور فتح الصفحة من السيرفر -->
+                <div class="fs-5 fw-bold mt-1" id="price-{{ sym.replace('/', '') }}">
+                    {{ p.price if p else '—' }}
+                </div>
+                <div class="small c-dim" id="change-{{ sym.replace('/', '') }}">
+                    {% if p and p.change_pct is defined %}— {{ p.change_pct }}%{% else %}— 0.00%{% endif %}
+                </div>
             </div>
         {% endfor %}
     </div>
@@ -733,7 +739,7 @@ const i18n = {
 let currentLang = localStorage.getItem("lang") || "ar";
 
 function applyLanguage() {
-    // 1. ترجمة العناصر الثابتة
+    // ترجمة العناصر الثابتة
     document.querySelectorAll("[data-i18n]").forEach(el => {
         const key = el.getAttribute("data-i18n");
         if (i18n[currentLang][key]) {
@@ -741,35 +747,27 @@ function applyLanguage() {
         }
     });
 
-    // 2. ترجمة العناصر الديناميكية (الجلسة، السيولة، الأخبار)
-    document.querySelectorAll("#session-val, #liquidity-val, .news-title").forEach(el => {
-        const arText = el.getAttribute("data-ar");
-        const enText = el.getAttribute("data-en");
-        
-        if (arText && enText && arText !== enText) {
-            el.innerText = currentLang === "ar" ? arText : enText;
-        } else if (el.id === "session-val" || el.id === "liquidity-val") {
-            let text = el.innerText;
-            if (currentLang === "en") {
-                if (text.includes("سيدني")) el.innerText = text.replace("سيدني", "Sydney");
-                if (text.includes("نيويورك")) el.innerText = text.replace("نيويورك", "New York");
-                if (text.includes("لندن")) el.innerText = text.replace("لندن", "London");
-                if (text.includes("طوكيو")) el.innerText = text.replace("طوكيو", "Tokyo");
-                if (text.includes("متوسطة")) el.innerText = text.replace("متوسطة", "Medium");
-                if (text.includes("قوية جداً")) el.innerText = text.replace("قوية جداً", "Very High");
-                if (text.includes("مغلقة")) el.innerText = text.replace("مغلقة", "Closed");
-            } else {
-                if (text.includes("Sydney")) el.innerText = text.replace("Sydney", "سيدني");
-                if (text.includes("New York")) el.innerText = text.replace("New York", "نيويورك");
-                if (text.includes("London")) el.innerText = text.replace("London", "لندن");
-                if (text.includes("Tokyo")) el.innerText = text.replace("Tokyo", "طوكيو");
-                if (text.includes("Medium")) el.innerText = text.replace("Medium", "متوسطة");
-                if (text.includes("Very High")) el.innerText = text.replace("Very High", "قوية جداً");
-                if (text.includes("Closed")) el.innerText = text.replace("Closed", "مغلقة");
-            }
+    // ترجمة العناصر الديناميكية (الجلسة، السيولة)
+    document.querySelectorAll("#session-val, #liquidity-val").forEach(el => {
+        const text = el.innerText;
+        if (currentLang === "en") {
+            if (text.includes("سيدني")) el.innerText = text.replace("سيدني", "Sydney");
+            if (text.includes("نيويورك")) el.innerText = text.replace("نيويورك", "New York");
+            if (text.includes("لندن")) el.innerText = text.replace("لندن", "London");
+            if (text.includes("طوكيو")) el.innerText = text.replace("طوكيو", "Tokyo");
+            if (text.includes("متوسطة")) el.innerText = text.replace("متوسطة", "Medium");
+            if (text.includes("قوية جداً")) el.innerText = text.replace("قوية جداً", "Very High");
+        } else {
+            if (text.includes("Sydney")) el.innerText = text.replace("Sydney", "سيدني");
+            if (text.includes("New York")) el.innerText = text.replace("New York", "نيويورك");
+            if (text.includes("London")) el.innerText = text.replace("London", "لندن");
+            if (text.includes("Tokyo")) el.innerText = text.replace("Tokyo", "طوكيو");
+            if (text.includes("Medium")) el.innerText = text.replace("Medium", "متوسطة");
+            if (text.includes("Very High")) el.innerText = text.replace("Very High", "قوية جداً");
         }
     });
 
+    // تغيير نص الزر
     document.getElementById("lang-btn-text").innerText = currentLang === "ar" ? "EN" : "AR";
 }
 
@@ -858,24 +856,29 @@ async function refreshPrices() {
         if (!res.ok) return;
         const data = await res.json();
         
+        // للتشخيص: اطبع البيانات في الكونسول
+        console.log("Live Data from Server:", data); 
+
         for (const [sym, p] of Object.entries(data)) {
             const key = sym.replace('/', '');
             const priceEl = document.getElementById('price-' + key);
             const changeEl = document.getElementById('change-' + key);
             const tickerEl = document.getElementById('ticker-' + key);
 
-            if (priceEl && p && p.price) {
+            // تحديث السعر إذا كان أكبر من صفر
+            if (priceEl && p && p.price > 0) {
                 priceEl.innerText = parseFloat(p.price).toFixed(2);
-                if (changeEl && tickerEl) {
-                    const isUp = p.change_pct > 0;
-                    const isDown = p.change_pct < 0;
-                    changeEl.innerText = (isUp ? '▲ ' : isDown ? '▼ ' : '— ') + Math.abs(p.change_pct).toFixed(2) + '%';
-                    changeEl.className = 'small ' + (isUp ? 'c-pos' : isDown ? 'c-neg' : 'c-dim');
-                    tickerEl.className = 'ticker-item ' + (isUp ? 'up' : isDown ? 'down' : '');
-                }
+                priceEl.classList.add('c-cyan'); // إضافة لون لتمييز السعر
+            }
+
+            // تحديث التغير إن وجد
+            if (changeEl && tickerEl) {
+                changeEl.innerText = '— 0.00%';
+                changeEl.className = 'small c-dim';
+                tickerEl.className = 'ticker-item';
             }
         }
-    } catch (e) { console.error("Price update failed", e); }
+    } catch (e) { console.error("Price update failed:", e); }
 }
 setInterval(refreshPrices, 2000);
 refreshPrices();
