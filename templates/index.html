@@ -384,11 +384,14 @@
     <div class="ticker-grid">
         {% for sym in symbols %}
             {% set p = live_prices.get(sym) if live_prices else None %}
-            <div class="ticker-item" id="ticker-{{ sym.replace('/', '') }}" style="padding-bottom: 5px;">
+            <div class="ticker-item" id="ticker-{{ sym.replace('/', '') }}" style="padding: 0.75rem 0.5rem; overflow: hidden;">
                 <div class="c-dim small fw-bold">{{ sym }}</div>
-                <div class="fs-5 fw-bold mt-1" id="price-{{ sym.replace('/', '') }}">{{ p.price if p and p.price > 0 else '—' }}</div>
+                <div class="fs-5 fw-bold mt-1" id="price-{{ sym.replace('/', '') }}">
+                    {{ p.price if p and p.price > 0 else '—' }}
+                </div>
                 <div class="small c-dim" id="change-{{ sym.replace('/', '') }}">— 0.00%</div>
-                <div style="height: 30px; width: 100%; margin-top: 5px; position: relative;">
+                <!-- 👇 حاوية الخط البياني -->
+                <div style="height: 25px; width: 100%; margin-top: 5px; position: relative;">
                     <canvas id="chart-{{ sym.replace('/', '') }}"></canvas>
                 </div>
             </div>
@@ -852,6 +855,12 @@ async function runAnalysis() {
 const charts = {};
 const chartColors = { pos: '#10b981', neg: '#f43f5e', neutral: '#8a96ad' };
 
+// 👇 دقة الأسعار (عدد الخانات العشرية) لكل زوج
+const symbolDecimals = {
+    'XAU/USD': 2, 'XAG/USD': 3, 'WTI/USD': 2,
+    'EUR/USD': 5, 'GBP/USD': 5, 'USD/JPY': 3, 'DXY': 3
+};
+
 function initChart(sym) {
     const key = sym.replace('/', '');
     const canvas = document.getElementById('chart-' + key);
@@ -860,66 +869,70 @@ function initChart(sym) {
     charts[key] = new Chart(ctx, {
         type: 'line',
         data: { labels: [], datasets: [{ data: [], borderColor: chartColors.neutral, borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false }] },
-        options: {
+        options: { 
             responsive: true, 
-            maintainAspectRatio: false, // 👈 هذه الخاصية تمنع تمدد الرسم
-            plugins: { legend: { display: false }, tooltip: { enabled: false } },
-            scales: { x: { display: false }, y: { display: false } },
-            animation: false
+            maintainAspectRatio: false, 
+            plugins: { legend: { display: false }, tooltip: { enabled: false } }, 
+            scales: { x: { display: false }, y: { display: false } }, 
+            animation: false 
         }
     });
 }
-
 ['XAU/USD', 'XAG/USD', 'WTI/USD', 'EUR/USD', 'GBP/USD', 'USD/JPY', 'DXY'].forEach(initChart);
 
 async function refreshPrices() {
     try {
         const res = await fetch('/api/live_prices');
-        if (!res.ok) return;
-        const data = await res.json();
-        console.log("تحديث الأسعار:", data); // 👈 لمراقبة التحديث في الكونسول
-        
-        for (const [sym, p] of Object.entries(data)) {
-            const key = sym.replace('/', '');
-            const priceEl = document.getElementById('price-' + key);
-            const changeEl = document.getElementById('change-' + key);
-            const tickerEl = document.getElementById('ticker-' + key);
+        if (res.ok) {
+            const data = await res.json();
+            
+            for (const [sym, p] of Object.entries(data)) {
+                const key = sym.replace('/', '');
+                const priceEl = document.getElementById('price-' + key);
+                const changeEl = document.getElementById('change-' + key);
+                const tickerEl = document.getElementById('ticker-' + key);
 
-            if (priceEl && p && p.price > 0) {
-                const numPrice = parseFloat(p.price);
-                
-                // تحديث السعر
-                priceEl.innerText = numPrice.toFixed(sym.includes('JPY') ? 3 : 2);
-                
-                // تحديث اللون
-                if (changeEl && tickerEl) {
-                    const chg = p.change_pct ? parseFloat(p.change_pct) : 0;
-                    const isUp = chg > 0;
-                    const isDown = chg < 0;
-                    changeEl.innerText = (isUp ? '▲ ' : isDown ? '▼ ' : '— ') + Math.abs(chg).toFixed(2) + '%';
-                    changeEl.className = 'small ' + (isUp ? 'c-pos' : isDown ? 'c-neg' : 'c-dim');
-                    tickerEl.className = 'ticker-item ' + (isUp ? 'up' : isDown ? 'down' : '');
-                }
-
-                // تحديث المخطط
-                if (charts[key]) {
-                    const chart = charts[key];
-                    chart.data.labels.push('');
-                    chart.data.datasets[0].data.push(numPrice);
-                    chart.data.datasets[0].borderColor = (p.change_pct > 0) ? chartColors.pos : (p.change_pct < 0) ? chartColors.neg : chartColors.neutral;
-                    if (chart.data.labels.length > 30) {
-                        chart.data.labels.shift();
-                        chart.data.datasets[0].data.shift();
+                if (priceEl && p && p.price > 0) {
+                    const numPrice = parseFloat(p.price);
+                    // 👇 استخدام الدقة الصحيحة لكل زوج
+                    const decimals = symbolDecimals[sym] || 2;
+                    priceEl.innerText = numPrice.toFixed(decimals);
+                    
+                    if (changeEl && tickerEl) {
+                        const chg = p.change_pct ? parseFloat(p.change_pct) : 0;
+                        const isUp = chg > 0;
+                        const isDown = chg < 0;
+                        changeEl.innerText = (isUp ? '▲ ' : isDown ? '▼ ' : '— ') + Math.abs(chg).toFixed(2) + '%';
+                        changeEl.className = 'small ' + (isUp ? 'c-pos' : isDown ? 'c-neg' : 'c-dim');
+                        tickerEl.className = 'ticker-item ' + (isUp ? 'up' : isDown ? 'down' : '');
                     }
-                    chart.update();
+
+                    if (charts[key]) {
+                        const chart = charts[key];
+                        // إضافة السعر للخط البياني
+                        chart.data.labels.push('');
+                        chart.data.datasets[0].data.push(numPrice);
+                        chart.data.datasets[0].borderColor = (chg > 0) ? chartColors.pos : (chg < 0) ? chartColors.neg : chartColors.neutral;
+                        
+                        // الاحتفاظ بآخر 20 نقطة فقط
+                        if (chart.data.labels.length > 20) {
+                            chart.data.labels.shift();
+                            chart.data.datasets[0].data.shift();
+                        }
+                        chart.update();
+                    }
                 }
             }
         }
-    } catch (e) { console.error("Price update failed:", e); }
+    } catch (e) { 
+        console.error("Update failed:", e); 
+    } finally {
+        // 👇 استخدام setTimeout بدلاً من setInterval لمنع تراكم الطلبات وتعليق الموقع
+        setTimeout(refreshPrices, 1500); 
+    }
 }
 
-// تشغيل التحديث المستمر كل 3 ثوانٍ
-setInterval(refreshPrices, 3000);
+// بدء التحديث
 refreshPrices();
 
 // ==========================================
