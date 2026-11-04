@@ -1,10 +1,11 @@
+```python
 # app.py
 """
 Web Trading Bot — Personal Trading Analyst (Flask)
 Real market analysis, ICT×20, News guard (5/10), Fundamental Bias, TimeMachine,
 Risk gates, Trailing/Breakeven/Partial TP1, Weekend flatten.
 + DXY, Live RSS News, i18n (AR/EN), COT (filtered), CPI, Liquidity/Session snapshot.
-+ Yahoo Finance price streamer.
++ Yahoo Finance price streamer + Price Feed (calendar + blackout).
 
 Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
 """
@@ -21,10 +22,13 @@ import pandas as pd
 
 from analysis_engine import (
     NewsFetcher, SYMBOL_SPECS, analyze_symbol,
-    get_live_prices, fetch_news_with_fallback,
+    fetch_news_with_fallback,
 )
 
-from price_streamer import start_price_streamer
+from price_feed import (
+    PRICES, PRICE_LOCK, start_price_feed,
+    build_calendar, get_news_blackout,
+)
 
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
@@ -185,7 +189,26 @@ def set_lang(l):
 
 
 # =============================================================================
-# LIVE NEWS (RSS)
+# LIVE PRICES (from price_feed)
+# =============================================================================
+def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+    with PRICE_LOCK:
+        return {
+            sym: {
+                "price": data["price"],
+                "change_pct": round(
+                    ((data["price"] - data["prev_close"]) / data["prev_close"] * 100)
+                    if data["prev_close"] else 0,
+                    2,
+                ),
+            }
+            for sym, data in PRICES.items()
+            if data["price"] > 0
+        }
+
+
+# =============================================================================
+# LIVE NEWS (RSS) — legacy helper, not used by index() anymore
 # =============================================================================
 def fetch_live_news():
     feeds = [
@@ -250,20 +273,16 @@ def today_closed() -> List[Dict[str, Any]]:
 
 
 def market_snapshot() -> Dict[str, Any]:
-    """
-    Snapshot مركّز للسوق:
-      - حظر أخبار: 5 دقائق قبل / 10 بعد
-      - الجلسات النشطة (تُعرض كلها معاً)
-      - مستوى السيولة
-      - وقت افتتاح السوق القادم
-      - is_weekend للتمييز بين العطلة والتوقف المؤقت
-    """
     state = GUARD.state()
 
-    news_blackout = NEWS.high_impact_within(
-        minutes_before=NEWS_BEFORE_MIN,
-        minutes_after=NEWS_AFTER_MIN,
-    )
+    news_blackout = get_news_blackout()
+    news_blackout_event = None
+    if news_blackout.get("active"):
+        news_blackout_event = {
+            "title": news_blackout["event_ar"],
+            "currency": news_blackout["currency"],
+            "event_time": news_blackout["when"],
+        }
 
     if not state.is_open:
         liquidity, liq_color = "مغلقة", "danger"
@@ -295,7 +314,7 @@ def market_snapshot() -> Dict[str, Any]:
 
     return {
         **state.to_dict(),
-        "news_blackout": news_blackout,
+        "news_blackout": news_blackout_event,
         "liquidity": liquidity,
         "liq_color": liq_color,
         "session_name": session_name,
@@ -347,20 +366,18 @@ def run_analysis_cycle() -> Dict[str, Any]:
         USER_SETTINGS["last_cycle_stats"] = stats
         return stats
 
-    news_event = NEWS.high_impact_within(
-        minutes_before=NEWS_BEFORE_MIN,
-        minutes_after=NEWS_AFTER_MIN,
-    )
-    if news_event:
+    blackout = get_news_blackout()
+    if blackout.get("active"):
+        title = blackout.get("event_ar", "news")
         DB.save_market_snapshot({
             "is_open": True,
             "sessions": [s["name"] for s in state.active_sessions],
             "kill_zones": [k["name"] for k in state.active_kill_zones],
-            "blocked_reason": f"News blackout: {news_event['title']}",
+            "blocked_reason": f"News blackout: {title}",
             "news_blackout": 1,
         })
         stats["blocked_by_market"] = True
-        stats["blocked_reason"] = f"News blackout: {news_event['title']}"
+        stats["blocked_reason"] = f"News blackout: {title}"
         USER_SETTINGS["last_cycle_stats"] = stats
         return stats
 
@@ -831,7 +848,8 @@ def index():
     stats = DB.get_stats()
     strategy_stats = DB.get_filter_stats()
 
-    live_news = fetch_live_news()
+    # الأخبار من التقويم الثابت
+    live_news = build_calendar()
 
     fundamental_biases = DB.get_all_fundamental_bias()
     timemachine_cache = {
@@ -964,7 +982,7 @@ def api_news():
 
 @app.route("/api/news/live")
 def api_news_live():
-    return jsonify(fetch_live_news())
+    return jsonify(build_calendar())
 
 
 @app.route("/api/strategies")
@@ -1068,12 +1086,9 @@ def api_settings():
     return jsonify(USER_SETTINGS)
 
 
-# بدء البث اللحظي عند إقلاع التطبيق
-try:
-    start_price_streamer()
-    logger.info("Yahoo Finance price streamer started.")
-except Exception as e:
-    logger.error("Failed to start price streamer: %s", e)
+# بدء البث اللحظي
+start_price_feed()
+logger.info("Price feed background thread started.")
 
 
 # =============================================================================
@@ -1109,3 +1124,4 @@ def _delayed_start_scheduler():
 
 
 threading.Thread(target=_delayed_start_scheduler, daemon=True).start()
+```
