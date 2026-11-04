@@ -169,6 +169,15 @@
         border-color: var(--cyan);
     }
     .tf-chip:hover { border-color: var(--cyan); }
+
+    @keyframes slideInRight {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOutRight {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(100%); opacity: 0; }
+    }
 </style>
 </head>
 <body>
@@ -182,7 +191,6 @@
             </div>
             
             <div class="d-flex align-items-center gap-2 flex-wrap">
-                <!-- حالة السوق -->
                 {% if market.is_open %}
                     <span class="badge bg-success"><i class="bi bi-circle-fill" style="font-size:.5rem;"></i> <span data-i18n="market_open">السوق مفتوح</span></span>
                 {% elif market.is_weekend %}
@@ -193,7 +201,6 @@
                     </span>
                     {% endif %}
                 {% else %}
-                    <!-- توقف مؤقت بسبب سيولة أو انتقال جلسات -->
                     <span class="badge bg-warning text-dark"><i class="bi bi-pause-circle"></i> توقف مؤقت</span>
                     <span class="badge bg-secondary">السبب: {{ market.blocked_reason }}</span>
                 {% endif %}
@@ -222,22 +229,14 @@
     <div class="ticker-grid">
         {% for sym in symbols %}
             {% set p = live_prices.get(sym) %}
-            {% if p %}
-            <div class="ticker-item {% if p.change_pct > 0 %}up{% elif p.change_pct < 0 %}down{% endif %}">
+            <div class="ticker-item {% if p and p.change_pct > 0 %}up{% elif p and p.change_pct < 0 %}down{% endif %}" id="ticker-{{ sym.replace('/', '') }}">
                 <div class="c-dim small fw-bold">{{ sym }}</div>
-                <div class="fs-5 fw-bold mt-1">{{ p.price }}</div>
-                <div class="small {% if p.change_pct > 0 %}c-pos{% elif p.change_pct < 0 %}c-neg{% else %}c-dim{% endif %}">
-                    {% if p.change_pct > 0 %}▲{% elif p.change_pct < 0 %}▼{% else %}—{% endif %}
-                    {{ '%+.2f'|format(p.change_pct) }}%
+                <div class="fs-5 fw-bold mt-1" id="price-{{ sym.replace('/', '') }}">{{ p.price if p else '—' }}</div>
+                <div class="small {% if p and p.change_pct > 0 %}c-pos{% elif p and p.change_pct < 0 %}c-neg{% else %}c-dim{% endif %}" id="change-{{ sym.replace('/', '') }}">
+                    {% if p and p.change_pct > 0 %}▲{% elif p and p.change_pct < 0 %}▼{% else %}—{% endif %} 
+                    {{ '%+.2f'|format(p.change_pct) if p else '0.00' }}%
                 </div>
             </div>
-            {% else %}
-            <div class="ticker-item">
-                <div class="c-dim small fw-bold">{{ sym }}</div>
-                <div class="fs-5 fw-bold mt-1 c-dim">—</div>
-                <div class="small c-dim">—</div>
-            </div>
-            {% endif %}
         {% endfor %}
     </div>
 
@@ -450,15 +449,12 @@
                 </div>
                 {% if news %}
                     {% for n in news[:6] %}
-                    <div class="d-flex justify-content-between border-bottom border-secondary py-2 small"
-                         style="border-style:dashed !important;">
-                        <div style="flex-grow:1;">
-                            <span class="badge {% if n.impact == 'high' %}bg-danger{% else %}bg-warning text-dark{% endif %}"
-                                  style="font-size:.55rem;">●</span>
-                            <a href="{{ n.url }}" target="_blank" title="{{ n.title }}"
-                               class="news-link">{{ n.title[:60] }}{% if n.title|length > 60 %}…{% endif %}</a>
+                    <div class="d-flex justify-content-between border-bottom border-secondary py-2 small" style="border-style:dashed !important;">
+                        <div>
+                            <span class="badge {% if n.impact == 'HIGH' %}bg-danger{% else %}bg-warning text-dark{% endif %}" style="font-size:.55rem;">●</span>
+                            <span class="text-white">{{ n.event_ar }} ({{ n.currency }})</span>
                         </div>
-                        <div class="c-dim ms-2">{{ n.time.strftime('%H:%M') }}</div>
+                        <div class="c-dim">{{ n.when_str }}</div>
                     </div>
                     {% endfor %}
                 {% else %}
@@ -466,7 +462,6 @@
                 {% endif %}
             </div>
 
-            <!-- Strategy Performance -->
             <div class="card-box">
                 <div class="sec-h"><i class="bi bi-trophy"></i> <span data-i18n="strategies">أداء الاستراتيجيات (التعلم الذاتي)</span></div>
                 <div class="table-responsive">
@@ -502,7 +497,6 @@
                 </div>
             </div>
 
-            <!-- Settings -->
             <div class="card-box">
                 <div class="sec-h"><i class="bi bi-gear"></i> <span data-i18n="settings">الإعدادات</span></div>
 
@@ -552,6 +546,9 @@
         </div>
     </div>
 </div>
+
+<!-- Toast Container -->
+<div id="toast-container" style="position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px;"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
@@ -694,34 +691,96 @@ async function api(url, method, body) {
     return r.json();
 }
 
+// ==========================================
+// TOAST NOTIFICATIONS
+// ==========================================
+function showToast(message, type = 'success') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    const bg = type === 'success' ? 'var(--emerald)' : 'var(--rose)';
+    const icon = type === 'success' ? 'check-circle' : 'exclamation-circle';
+    
+    toast.className = 'shadow-lg rounded px-4 py-3 text-white fw-bold';
+    toast.style.background = bg;
+    toast.style.minWidth = '250px';
+    toast.style.animation = 'slideInRight 0.3s ease-out';
+    toast.innerHTML = `<i class="bi bi-${icon}"></i> ${message}`;
+    
+    container.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.animation = 'slideOutRight 0.3s ease-in';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// ==========================================
+// SIGNAL ACTIONS
+// ==========================================
 async function approveSignal(uid) {
     if (!confirm(i18n[currentLang].confirm_execute)) return;
     const res = await api("/api/approve/" + uid, "POST");
     if (res.ok) {
-        alert(i18n[currentLang].executed_success);
-        location.reload();
+        showToast(i18n[currentLang].executed_success);
+        setTimeout(() => location.reload(), 1200);
     } else {
-        alert(i18n[currentLang].rejected_msg + ": " + (res.error || ""));
+        showToast(i18n[currentLang].rejected_msg + ": " + (res.error || ""), 'error');
     }
 }
 
 async function rejectSignal(uid) {
     await api("/api/reject/" + uid, "POST");
-    location.reload();
+    showToast(i18n[currentLang].rejected_msg);
+    setTimeout(() => location.reload(), 800);
 }
 
 async function runAnalysis() {
-    const btn = event.target.closest("button");
-    if (btn) btn.disabled = true;
-    const res = await api("/api/run-analysis", "POST");
-    alert(
-        i18n[currentLang].analysis_done +
-        "\n" + i18n[currentLang].generated + ": " + res.generated +
-        "\n" + i18n[currentLang].rejected + ": " + res.rejected
-    );
-    location.reload();
+    const btn = event.target.closest('button');
+    btn.disabled = true;
+    showToast('جاري تحليل السوق...', 'success');
+    
+    const res = await api('/api/run-analysis', 'POST');
+    if (res.blocked_by_market) {
+        showToast('السوق مغلق أو محظور مؤقتاً', 'error');
+        btn.disabled = false;
+    } else {
+        showToast(`تم التحليل: ${res.generated} توصية جديدة`);
+        setTimeout(() => location.reload(), 1500);
+    }
 }
 
+// ==========================================
+// LIVE PRICES POLLING (Every 10 seconds)
+// ==========================================
+async function refreshPrices() {
+    try {
+        const res = await fetch('/api/live_prices');
+        const data = await res.json();
+        
+        for (const [sym, p] of Object.entries(data)) {
+            const key = sym.replace('/', '');
+            const priceEl = document.getElementById('price-' + key);
+            const changeEl = document.getElementById('change-' + key);
+            const tickerEl = document.getElementById('ticker-' + key);
+            
+            if (priceEl) priceEl.innerText = p.price;
+            if (changeEl && tickerEl) {
+                const isUp = p.change_pct > 0;
+                const isDown = p.change_pct < 0;
+                
+                changeEl.innerText = (isUp ? '▲' : isDown ? '▼' : '—') + ' ' + (p.change_pct > 0 ? '+' : '') + p.change_pct + '%';
+                changeEl.className = 'small ' + (isUp ? 'c-pos' : isDown ? 'c-neg' : 'c-dim');
+                
+                tickerEl.className = 'ticker-item ' + (isUp ? 'up' : isDown ? 'down' : '');
+            }
+        }
+    } catch (e) { console.error("Price update failed", e); }
+}
+setInterval(refreshPrices, 10000);
+
+// ==========================================
+// COUNTDOWN TIMER (Top Bar)
+// ==========================================
 {% if not market.is_open and market.next_open_ts %}
 function updateCountdown() {
     const target = new Date("{{ market.next_open_ts }}").getTime();
@@ -749,6 +808,9 @@ setInterval(updateCountdown, 1000);
 updateCountdown();
 {% endif %}
 
+// ==========================================
+// COUNTDOWN TIMER (Empty State)
+// ==========================================
 {% if not market.is_open and market.next_open_ts %}
 function updateEmptyCountdown() {
     const target = new Date("{{ market.next_open_ts }}").getTime();
@@ -779,6 +841,9 @@ setInterval(updateEmptyCountdown, 1000);
 updateEmptyCountdown();
 {% endif %}
 
+// ==========================================
+// SETTINGS
+// ==========================================
 function updateTimeframeChips() {
     const style = document.getElementById('set-style').value;
     const swingTfs = ['1H', '4H'];
@@ -810,14 +875,18 @@ async function saveSettings() {
         auto_generate_signals: document.getElementById('set-auto').checked,
         timeframes: tfs,
     };
-    const res = await fetch('/api/settings', {
-        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
-    }).then(r => r.json());
     
-    if (res.ok) { alert('تم الحفظ'); location.reload(); }
-    else { alert('فشل'); }
+    const res = await api('/api/settings', 'POST', data);
+    if (res.ok) {
+        showToast('تم حفظ الإعدادات بنجاح');
+    } else {
+        showToast('فشل حفظ الإعدادات', 'error');
+    }
 }
 
+// ==========================================
+// INIT
+// ==========================================
 document.addEventListener("DOMContentLoaded", applyLanguage);
 
 setInterval(async function () {
