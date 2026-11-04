@@ -194,10 +194,11 @@ def api_live_prices():
     from price_feed import PRICES
     out = {}
     for sym, data in PRICES.items():
-        out[sym] = {
-            "price": data.get("price", 0.0),
-            "change_pct": 0.0
-        }
+        if data.get("price", 0) > 0:
+            out[sym] = {
+                "price": float(data["price"]),
+                "change_pct": float(data.get("change_pct", 0.0))
+            }
     return jsonify(out)
 
 
@@ -206,10 +207,11 @@ def api_prices():
     from price_feed import PRICES
     out = {}
     for sym, data in PRICES.items():
-        out[sym] = {
-            "price": data.get("price", 0.0),
-            "change_pct": 0.0
-        }
+        if data.get("price", 0) > 0:
+            out[sym] = {
+                "price": float(data["price"]),
+                "change_pct": float(data.get("change_pct", 0.0))
+            }
     return jsonify(out)
 
 
@@ -797,7 +799,7 @@ def start_scheduler() -> None:
 def index():
     from price_feed import PRICES
     # نمرر الأسعار مباشرة للواجهة
-    live_prices = {sym: {"price": d.get("price", 0.0)} for sym, d in PRICES.items()}
+    live_prices = {sym: d for sym, d in PRICES.items() if d.get("price", 0) > 0}
 
     state = market_snapshot()
     pending = DB.get_pending_signals()
