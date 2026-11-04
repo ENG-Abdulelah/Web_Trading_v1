@@ -386,11 +386,15 @@
             {% set p = live_prices.get(sym) if live_prices else None %}
             <div class="ticker-item" id="ticker-{{ sym.replace('/', '') }}" style="padding: 0.75rem 0.5rem; overflow: hidden;">
                 <div class="c-dim small fw-bold">{{ sym }}</div>
+                <!-- 👇 قص السعر من السيرفر مباشرة -->
                 <div class="fs-5 fw-bold mt-1" id="price-{{ sym.replace('/', '') }}">
-                    {{ p.price if p and p.price > 0 else '—' }}
+                    {% if p and p.price > 0 %}
+                        {{ '%.5f'|format(p.price)|trim('0')|trim('.') }}
+                    {% else %}
+                        —
+                    {% endif %}
                 </div>
                 <div class="small c-dim" id="change-{{ sym.replace('/', '') }}">— 0.00%</div>
-                <!-- 👇 حاوية الخط البياني -->
                 <div style="height: 25px; width: 100%; margin-top: 5px; position: relative;">
                     <canvas id="chart-{{ sym.replace('/', '') }}"></canvas>
                 </div>
@@ -869,18 +873,18 @@ function initChart(sym) {
     charts[key] = new Chart(ctx, {
         type: 'line',
         data: { labels: [], datasets: [{ data: [], borderColor: chartColors.neutral, borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false }] },
-        options: { 
-            responsive: true, 
-            maintainAspectRatio: false, 
-            plugins: { legend: { display: false }, tooltip: { enabled: false } }, 
-            scales: { x: { display: false }, y: { display: false } }, 
-            animation: false 
-        }
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } }, animation: false }
     });
 }
 ['XAU/USD', 'XAG/USD', 'WTI/USD', 'EUR/USD', 'GBP/USD', 'USD/JPY', 'DXY'].forEach(initChart);
 
+// 👇 قفل لمنع تعليق الموقع
+let isFetching = false;
+
 async function refreshPrices() {
+    if (isFetching) return; // إذا كان هناك طلب قيد التنفيذ، لا ترسل طلباً جديداً
+    isFetching = true;
+
     try {
         const res = await fetch('/api/live_prices');
         if (res.ok) {
@@ -894,8 +898,9 @@ async function refreshPrices() {
 
                 if (priceEl && p && p.price > 0) {
                     const numPrice = parseFloat(p.price);
-                    // 👇 استخدام الدقة الصحيحة لكل زوج
                     const decimals = symbolDecimals[sym] || 2;
+                    
+                    // 👇 دقة MT5 في عرض السعر
                     priceEl.innerText = numPrice.toFixed(decimals);
                     
                     if (changeEl && tickerEl) {
@@ -909,17 +914,15 @@ async function refreshPrices() {
 
                     if (charts[key]) {
                         const chart = charts[key];
-                        // إضافة السعر للخط البياني
                         chart.data.labels.push('');
                         chart.data.datasets[0].data.push(numPrice);
                         chart.data.datasets[0].borderColor = (chg > 0) ? chartColors.pos : (chg < 0) ? chartColors.neg : chartColors.neutral;
                         
-                        // الاحتفاظ بآخر 20 نقطة فقط
                         if (chart.data.labels.length > 20) {
                             chart.data.labels.shift();
                             chart.data.datasets[0].data.shift();
                         }
-                        chart.update();
+                        chart.update('none'); // 👈 تحديث سريع بدون أنيميشن لتجنب التقطيع
                     }
                 }
             }
@@ -927,12 +930,12 @@ async function refreshPrices() {
     } catch (e) { 
         console.error("Update failed:", e); 
     } finally {
-        // 👇 استخدام setTimeout بدلاً من setInterval لمنع تراكم الطلبات وتعليق الموقع
-        setTimeout(refreshPrices, 1500); 
+        isFetching = false; // فك القفل بعد انتهاء الطلب
     }
 }
 
-// بدء التحديث
+// التحديث كل 1.5 ثانية
+setInterval(refreshPrices, 1500);
 refreshPrices();
 
 // ==========================================
