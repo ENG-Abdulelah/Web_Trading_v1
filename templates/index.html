@@ -384,11 +384,13 @@
     <div class="ticker-grid">
         {% for sym in symbols %}
             {% set p = live_prices.get(sym) if live_prices else None %}
-            <div class="ticker-item" id="ticker-{{ sym.replace('/', '') }}">
+            <div class="ticker-item" id="ticker-{{ sym.replace('/', '') }}" style="padding-bottom: 5px;">
                 <div class="c-dim small fw-bold">{{ sym }}</div>
                 <div class="fs-5 fw-bold mt-1" id="price-{{ sym.replace('/', '') }}">{{ p.price if p and p.price > 0 else '—' }}</div>
                 <div class="small c-dim" id="change-{{ sym.replace('/', '') }}">— 0.00%</div>
-                <canvas id="chart-{{ sym.replace('/', '') }}" height="35" style="margin-top: 8px; width: 100%;"></canvas>
+                <div style="height: 30px; width: 100%; margin-top: 5px; position: relative;">
+                    <canvas id="chart-{{ sym.replace('/', '') }}"></canvas>
+                </div>
             </div>
         {% endfor %}
     </div>
@@ -858,9 +860,16 @@ function initChart(sym) {
     charts[key] = new Chart(ctx, {
         type: 'line',
         data: { labels: [], datasets: [{ data: [], borderColor: chartColors.neutral, borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } }, animation: false }
+        options: {
+            responsive: true, 
+            maintainAspectRatio: false, // 👈 هذه الخاصية تمنع تمدد الرسم
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            scales: { x: { display: false }, y: { display: false } },
+            animation: false
+        }
     });
 }
+
 ['XAU/USD', 'XAG/USD', 'WTI/USD', 'EUR/USD', 'GBP/USD', 'USD/JPY', 'DXY'].forEach(initChart);
 
 async function refreshPrices() {
@@ -868,6 +877,7 @@ async function refreshPrices() {
         const res = await fetch('/api/live_prices');
         if (!res.ok) return;
         const data = await res.json();
+        console.log("تحديث الأسعار:", data); // 👈 لمراقبة التحديث في الكونسول
         
         for (const [sym, p] of Object.entries(data)) {
             const key = sym.replace('/', '');
@@ -877,10 +887,13 @@ async function refreshPrices() {
 
             if (priceEl && p && p.price > 0) {
                 const numPrice = parseFloat(p.price);
+                
+                // تحديث السعر
                 priceEl.innerText = numPrice.toFixed(sym.includes('JPY') ? 3 : 2);
                 
+                // تحديث اللون
                 if (changeEl && tickerEl) {
-                    const chg = parseFloat(p.change_pct || 0);
+                    const chg = p.change_pct ? parseFloat(p.change_pct) : 0;
                     const isUp = chg > 0;
                     const isDown = chg < 0;
                     changeEl.innerText = (isUp ? '▲ ' : isDown ? '▼ ' : '— ') + Math.abs(chg).toFixed(2) + '%';
@@ -888,6 +901,7 @@ async function refreshPrices() {
                     tickerEl.className = 'ticker-item ' + (isUp ? 'up' : isDown ? 'down' : '');
                 }
 
+                // تحديث المخطط
                 if (charts[key]) {
                     const chart = charts[key];
                     chart.data.labels.push('');
@@ -903,7 +917,9 @@ async function refreshPrices() {
         }
     } catch (e) { console.error("Price update failed:", e); }
 }
-setInterval(refreshPrices, 2000);
+
+// تشغيل التحديث المستمر كل 3 ثوانٍ
+setInterval(refreshPrices, 3000);
 refreshPrices();
 
 // ==========================================
