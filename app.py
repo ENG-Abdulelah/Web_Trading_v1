@@ -200,7 +200,7 @@ def api_live_prices():
                     chg = ((data["price"] - data["prev_close"]) / data["prev_close"]) * 100
                 out[sym] = {
                     "price": data["price"],
-                    "change_pct": round(chg, 2),
+                    "change_pct": round(chg, 2)
                 }
         return jsonify(out)
 
@@ -217,7 +217,7 @@ def api_prices():
                     chg = ((data["price"] - data["prev_close"]) / data["prev_close"]) * 100
                 out[sym] = {
                     "price": data["price"],
-                    "change_pct": round(chg, 2),
+                    "change_pct": round(chg, 2)
                 }
         return jsonify(out)
 
