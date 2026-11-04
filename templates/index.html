@@ -17,6 +17,7 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css"
       rel="stylesheet" id="bootstrap-css">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
     :root {
@@ -385,13 +386,9 @@
             {% set p = live_prices.get(sym) if live_prices else None %}
             <div class="ticker-item" id="ticker-{{ sym.replace('/', '') }}">
                 <div class="c-dim small fw-bold">{{ sym }}</div>
-                <!-- هذا السطر يعرض السعر فور فتح الصفحة من السيرفر -->
-                <div class="fs-5 fw-bold mt-1" id="price-{{ sym.replace('/', '') }}">
-                    {{ p.price if p else '—' }}
-                </div>
-                <div class="small c-dim" id="change-{{ sym.replace('/', '') }}">
-                    {% if p and p.change_pct is defined %}— {{ p.change_pct }}%{% else %}— 0.00%{% endif %}
-                </div>
+                <div class="fs-5 fw-bold mt-1" id="price-{{ sym.replace('/', '') }}">{{ p.price if p else '—' }}</div>
+                <div class="small c-dim" id="change-{{ sym.replace('/', '') }}">— 0.00%</div>
+                <canvas id="chart-{{ sym.replace('/', '') }}" height="30" style="margin-top: 5px; width: 100%;"></canvas>
             </div>
         {% endfor %}
     </div>
@@ -711,6 +708,84 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
+// ==========================================
+// CHARTS & LIVE PRICES
+// ==========================================
+const charts = {};
+const chartColors = { pos: '#10b981', neg: '#f43f5e', neutral: '#8a96ad' };
+
+function initChart(sym) {
+    const key = sym.replace('/', '');
+    const canvas = document.getElementById('chart-' + key);
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    charts[key] = new Chart(ctx, {
+        type: 'line',
+        data: { labels: [], datasets: [{ data: [], borderColor: chartColors.neutral, borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false }] },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            scales: { x: { display: false }, y: { display: false } },
+            animation: false
+        }
+    });
+}
+
+// تهيئة الرسوم البيانية
+['XAU/USD', 'XAG/USD', 'WTI/USD', 'EUR/USD', 'GBP/USD', 'USD/JPY', 'DXY'].forEach(initChart);
+
+async function refreshPrices() {
+    try {
+        const res = await fetch('/api/live_prices');
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        for (const [sym, p] of Object.entries(data)) {
+            const key = sym.replace('/', '');
+            const priceEl = document.getElementById('price-' + key);
+            const changeEl = document.getElementById('change-' + key);
+            const tickerEl = document.getElementById('ticker-' + key);
+
+            if (priceEl && p && p.price > 0) {
+                // تحديث السعر (تحويله إلى رقم وإظهاره)
+                const numPrice = parseFloat(p.price);
+                priceEl.innerText = numPrice.toFixed(sym.includes('JPY') ? 3 : 2);
+                
+                // تحديث التغير والألوان
+                if (changeEl && tickerEl) {
+                    const chg = parseFloat(p.change_pct || 0);
+                    const isUp = chg > 0;
+                    const isDown = chg < 0;
+                    changeEl.innerText = (isUp ? '▲ ' : isDown ? '▼ ' : '— ') + Math.abs(chg).toFixed(2) + '%';
+                    changeEl.className = 'small ' + (isUp ? 'c-pos' : isDown ? 'c-neg' : 'c-dim');
+                    tickerEl.className = 'ticker-item ' + (isUp ? 'up' : isDown ? 'down' : '');
+                }
+
+                // تحديث المخطط البياني
+                if (charts[key]) {
+                    const chart = charts[key];
+                    chart.data.labels.push('');
+                    chart.data.datasets[0].data.push(numPrice);
+                    chart.data.datasets[0].borderColor = (p.change_pct > 0) ? chartColors.pos : (p.change_pct < 0) ? chartColors.neg : chartColors.neutral;
+                    
+                    if (chart.data.labels.length > 20) {
+                        chart.data.labels.shift();
+                        chart.data.datasets[0].data.shift();
+                    }
+                    chart.update();
+                }
+            }
+        }
+    } catch (e) { console.error("Price update failed:", e); }
+}
+
+setInterval(refreshPrices, 3000);
+setTimeout(refreshPrices, 500);
+
+// ==========================================
+// LANGUAGE & I18N
+// ==========================================
 const i18n = {
     "ar": {
         "market_open": "السوق مفتوح", "market_closed": "السوق مغلق",
@@ -846,42 +921,6 @@ async function runAnalysis() {
         setTimeout(() => location.reload(), 1500);
     }
 }
-
-// ==========================================
-// LIVE PRICES POLLING
-// ==========================================
-async function refreshPrices() {
-    try {
-        const res = await fetch('/api/live_prices');
-        if (!res.ok) return;
-        const data = await res.json();
-        
-        // للتشخيص: اطبع البيانات في الكونسول
-        console.log("Live Data from Server:", data); 
-
-        for (const [sym, p] of Object.entries(data)) {
-            const key = sym.replace('/', '');
-            const priceEl = document.getElementById('price-' + key);
-            const changeEl = document.getElementById('change-' + key);
-            const tickerEl = document.getElementById('ticker-' + key);
-
-            // تحديث السعر إذا كان أكبر من صفر
-            if (priceEl && p && p.price > 0) {
-                priceEl.innerText = parseFloat(p.price).toFixed(2);
-                priceEl.classList.add('c-cyan'); // إضافة لون لتمييز السعر
-            }
-
-            // تحديث التغير إن وجد
-            if (changeEl && tickerEl) {
-                changeEl.innerText = '— 0.00%';
-                changeEl.className = 'small c-dim';
-                tickerEl.className = 'ticker-item';
-            }
-        }
-    } catch (e) { console.error("Price update failed:", e); }
-}
-setInterval(refreshPrices, 2000);
-refreshPrices();
 
 // ==========================================
 // COUNTDOWN TIMER (Top Bar)
