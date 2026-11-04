@@ -1,11 +1,10 @@
-
 # app.py
 """
 Web Trading Bot — Personal Trading Analyst (Flask)
 Real market analysis, ICT×20, News guard (5/10), Fundamental Bias, TimeMachine,
 Risk gates, Trailing/Breakeven/Partial TP1, Weekend flatten.
-+ DXY, Live RSS News, i18n (AR/EN), COT (filtered), CPI, Liquidity/Session snapshot.
-+ Yahoo Finance price streamer + Price Feed (calendar + blackout).
++ DXY, i18n (AR/EN), COT (filtered), CPI, Liquidity/Session snapshot.
++ Yahoo Finance price feed (memory-based, no external API 429).
 
 Developed & Engineered by Engineer Abdulelah Sadiq (المهندس عبد الإله صادق)
 """
@@ -59,7 +58,7 @@ app.config["JSON_AS_ASCII"] = False
 # =============================================================================
 DB = Database()
 GUARD = SessionGuard()
-NEWS = NewsFetcher()
+# NEWS = NewsFetcher()  # ❌ تم تعطيله لوقف خطأ 429 (نستخدم price_feed بدلاً منه)
 RISK = RiskManager(RiskConfig())
 FUNDAMENTALS = get_fundamentals_engine()
 TIMEMACHINE = TimeMachine(DB)
@@ -189,26 +188,28 @@ def set_lang(l):
 
 
 # =============================================================================
-# LIVE PRICES (from price_feed)
+# LIVE PRICES (from price_feed memory)
 # =============================================================================
 def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+    """قراءة الأسعار من الذاكرة الحية التي يملؤها price_feed"""
     with PRICE_LOCK:
-        return {
-            sym: {
-                "price": data["price"],
-                "change_pct": round(
-                    ((data["price"] - data["prev_close"]) / data["prev_close"] * 100)
-                    if data["prev_close"] else 0,
-                    2,
-                ),
-            }
-            for sym, data in PRICES.items()
-            if data["price"] > 0
-        }
+        out = {}
+        for sym in symbols:
+            if sym in PRICES:
+                data = PRICES[sym]
+                if data["price"] > 0:
+                    chg = 0.0
+                    if data["prev_close"] > 0:
+                        chg = ((data["price"] - data["prev_close"]) / data["prev_close"]) * 100
+                    out[sym] = {
+                        "price": data["price"],
+                        "change_pct": round(chg, 2),
+                    }
+        return out
 
 
 # =============================================================================
-# LIVE NEWS (RSS) — legacy helper, not used by index() anymore
+# LIVE NEWS (RSS) — legacy helper, unused (kept for compatibility)
 # =============================================================================
 def fetch_live_news():
     feeds = [
@@ -275,13 +276,14 @@ def today_closed() -> List[Dict[str, Any]]:
 def market_snapshot() -> Dict[str, Any]:
     state = GUARD.state()
 
+    # 👈 استخدام التقويم الجديد (price_feed) بدلاً من NEWS القديم
     news_blackout = get_news_blackout()
-    news_blackout_event = None
+    news_event = None
     if news_blackout.get("active"):
-        news_blackout_event = {
-            "title": news_blackout["event_ar"],
-            "currency": news_blackout["currency"],
-            "event_time": news_blackout["when"],
+        news_event = {
+            "title": news_blackout.get("event_ar", ""),
+            "currency": news_blackout.get("currency", ""),
+            "event_time": news_blackout.get("when", ""),
         }
 
     if not state.is_open:
@@ -301,12 +303,16 @@ def market_snapshot() -> Dict[str, Any]:
         if state.active_sessions else "لا توجد جلسة"
     )
 
-    next_open_ts: Optional[str] = None
+    next_open_ts = None
     next_session = getattr(state, "next_session", None)
     if not state.is_open and next_session:
         try:
-            minutes = int(next_session.get("in_minutes", 0))
-            next_open_ts = (utcnow() + timedelta(minutes=minutes)).isoformat()
+            in_minutes = (
+                next_session.get("in_minutes")
+                if isinstance(next_session, dict)
+                else getattr(next_session, "in_minutes", 0)
+            ) or 0
+            next_open_ts = (utcnow() + timedelta(minutes=int(in_minutes))).isoformat()
         except Exception as e:
             logger.warning("next_open_ts calc failed: %s", e)
 
@@ -314,7 +320,7 @@ def market_snapshot() -> Dict[str, Any]:
 
     return {
         **state.to_dict(),
-        "news_blackout": news_blackout_event,
+        "news_blackout": news_event,
         "liquidity": liquidity,
         "liq_color": liq_color,
         "session_name": session_name,
@@ -366,18 +372,22 @@ def run_analysis_cycle() -> Dict[str, Any]:
         USER_SETTINGS["last_cycle_stats"] = stats
         return stats
 
-    blackout = get_news_blackout()
-    if blackout.get("active"):
-        title = blackout.get("event_ar", "news")
+    # 👈 استخدام التقويم الجديد بدلاً من NEWS.high_impact_within
+    news_check = get_news_blackout()
+    news_event = (
+        {"title": news_check.get("event_ar", "")}
+        if news_check.get("active") else None
+    )
+    if news_event:
         DB.save_market_snapshot({
             "is_open": True,
             "sessions": [s["name"] for s in state.active_sessions],
             "kill_zones": [k["name"] for k in state.active_kill_zones],
-            "blocked_reason": f"News blackout: {title}",
+            "blocked_reason": f"News blackout: {news_event['title']}",
             "news_blackout": 1,
         })
         stats["blocked_by_market"] = True
-        stats["blocked_reason"] = f"News blackout: {title}"
+        stats["blocked_reason"] = f"News blackout: {news_event['title']}"
         USER_SETTINGS["last_cycle_stats"] = stats
         return stats
 
@@ -848,8 +858,8 @@ def index():
     stats = DB.get_stats()
     strategy_stats = DB.get_filter_stats()
 
-    # الأخبار من التقويم الثابت
-    live_news = build_calendar()
+    # 👈 الأخبار من التقويم الثابت
+    news = build_calendar()
 
     fundamental_biases = DB.get_all_fundamental_bias()
     timemachine_cache = {
@@ -874,7 +884,7 @@ def index():
         balance=balance,
         open_risk_pct=round(open_risk_pct, 2),
         strategy_stats=strategy_stats,
-        news=live_news,
+        news=news,
         fundamental_biases=fundamental_biases,
         timemachine_cache=timemachine_cache,
         live_prices=live_prices,
@@ -897,7 +907,7 @@ def api_state():
         "closed": DB.get_closed_trades(limit=30),
         "stats": DB.get_stats(),
         "balance": get_balance(),
-        "news": DB.get_recent_news(hours=6),
+        "news": build_calendar(),
         "now": utcnow().isoformat(),
     })
 
@@ -977,7 +987,7 @@ def api_market():
 
 @app.route("/api/news")
 def api_news():
-    return jsonify(DB.get_recent_news(hours=48))
+    return jsonify(build_calendar())
 
 
 @app.route("/api/news/live")
@@ -1055,11 +1065,8 @@ def api_diagnostics():
 
 @app.route("/api/news/refresh", methods=["POST"])
 def api_news_refresh():
-    events = fetch_news_with_fallback()
-    if events:
-        DB.replace_news_cache(events)
-        return jsonify({"ok": True, "count": len(events)})
-    return jsonify({"ok": False, "error": "All news sources failed"})
+    # لم يعد يستخدم أي API خارجي — يعيد التقويم الثابت
+    return jsonify({"ok": True, "count": len(build_calendar())})
 
 
 @app.route("/api/settings", methods=["GET", "POST"])
