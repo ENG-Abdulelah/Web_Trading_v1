@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -449,15 +450,12 @@
                 </div>
                 {% if news %}
                     {% for n in news[:6] %}
-                    <div class="d-flex justify-content-between border-bottom border-secondary py-2 small"
-                         style="border-style:dashed !important;">
-                        <div style="flex-grow:1;">
-                            <span class="badge {% if n.impact == 'high' %}bg-danger{% else %}bg-warning text-dark{% endif %}"
-                                  style="font-size:.55rem;">●</span>
-                            <a href="{{ n.url }}" target="_blank" title="{{ n.title }}"
-                               class="news-link">{{ n.title[:60] }}{% if n.title|length > 60 %}…{% endif %}</a>
+                    <div class="d-flex justify-content-between border-bottom border-secondary py-2 small" style="border-style:dashed !important;">
+                        <div>
+                            <span class="badge {% if n.impact == 'HIGH' %}bg-danger{% else %}bg-warning text-dark{% endif %}" style="font-size:.55rem;">●</span>
+                            <span class="text-white">{{ n.event_ar }} ({{ n.currency }})</span>
                         </div>
-                        <div class="c-dim ms-2">{{ n.time.strftime('%H:%M') }}</div>
+                        <div class="c-dim">{{ n.when_str }}</div>
                     </div>
                     {% endfor %}
                 {% else %}
@@ -757,7 +755,7 @@ async function runAnalysis() {
 // ==========================================
 async function refreshPrices() {
     try {
-        const res = await fetch('/api/prices');
+        const res = await fetch('/api/live_prices');
         const data = await res.json();
         
         for (const [sym, p] of Object.entries(data)) {
@@ -779,7 +777,7 @@ async function refreshPrices() {
         }
     } catch (e) { console.error("Price update failed", e); }
 }
-setInterval(refreshPrices, 1000);
+setInterval(refreshPrices, 10000);
 
 // ==========================================
 // COUNTDOWN TIMER (Top Bar)
@@ -807,7 +805,7 @@ function updateCountdown() {
     
     document.getElementById("countdown-timer").innerText = str;
 }
-setInterval(updateCountdown, 3000);
+setInterval(updateCountdown, 1000);
 updateCountdown();
 {% endif %}
 
