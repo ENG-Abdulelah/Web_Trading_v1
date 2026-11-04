@@ -340,15 +340,7 @@ def run_analysis_cycle() -> Dict[str, Any]:
     # تحديث قاعدة البيانات بالأخبار الجديدة (إن لزم)
     pass
 
-    try:
-        biases = FUNDAMENTALS.bias_for_all(SYMBOLS)
-        for sym, b in biases.items():
-            DB.save_fundamental_bias(
-                sym, b.bias, b.confidence, b.components, b.reason,
-            )
-    except Exception as e:
-        logger.warning("fundamentals bias failed: %s", e)
-        biases = {}
+    biases = {}  # 👈 تم تعطيل الجلب القديم مؤقتاً لتجنب الحظر
 
     filters = DB.get_filter_weights()
     open_pos = DB.get_open_positions()
