@@ -1,3 +1,4 @@
+
 # app.py
 """
 Web Trading Bot — Personal Trading Analyst (Flask)
@@ -190,36 +191,26 @@ def set_lang(l):
 # =============================================================================
 @app.route("/api/live_prices")
 def api_live_prices():
-    from price_feed import PRICES, PRICE_LOCK
-    with PRICE_LOCK:
-        out = {}
-        for sym, data in PRICES.items():
-            if data["price"] > 0:
-                chg = 0.0
-                if data.get("prev_close", 0) > 0:
-                    chg = ((data["price"] - data["prev_close"]) / data["prev_close"]) * 100
-                out[sym] = {
-                    "price": data["price"],
-                    "change_pct": round(chg, 2)
-                }
-        return jsonify(out)
+    from price_feed import PRICES
+    out = {}
+    for sym, data in PRICES.items():
+        out[sym] = {
+            "price": data.get("price", 0.0),
+            "change_pct": 0.0
+        }
+    return jsonify(out)
 
 
 @app.route("/api/prices")
 def api_prices():
-    from price_feed import PRICES, PRICE_LOCK
-    with PRICE_LOCK:
-        out = {}
-        for sym, data in PRICES.items():
-            if data["price"] > 0:
-                chg = 0.0
-                if data.get("prev_close", 0) > 0:
-                    chg = ((data["price"] - data["prev_close"]) / data["prev_close"]) * 100
-                out[sym] = {
-                    "price": data["price"],
-                    "change_pct": round(chg, 2)
-                }
-        return jsonify(out)
+    from price_feed import PRICES
+    out = {}
+    for sym, data in PRICES.items():
+        out[sym] = {
+            "price": data.get("price", 0.0),
+            "change_pct": 0.0
+        }
+    return jsonify(out)
 
 
 # =============================================================================
@@ -804,19 +795,15 @@ def start_scheduler() -> None:
 # =============================================================================
 @app.route("/")
 def index():
+    from price_feed import PRICES
+    # نمرر الأسعار مباشرة للواجهة
+    live_prices = {sym: {"price": d.get("price", 0.0)} for sym, d in PRICES.items()}
+
     state = market_snapshot()
     pending = DB.get_pending_signals()
     open_pos = DB.get_open_positions()
     stats = DB.get_stats()
     strategy_stats = DB.get_filter_stats()
-
-    from price_feed import PRICES, PRICE_LOCK
-    with PRICE_LOCK:
-        live_prices = {
-            sym: {"price": d["price"]}
-            for sym, d in PRICES.items()
-            if d["price"] > 0
-        }
 
     return render_template(
         "index.html",
