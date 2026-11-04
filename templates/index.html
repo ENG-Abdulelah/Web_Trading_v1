@@ -409,13 +409,14 @@
     <div class="sec-h"><i class="bi bi-activity"></i> <span data-i18n="live_prices">الأسعار الحية</span></div>
     <div class="ticker-grid">
         {% for sym in symbols %}
-            {% set p = live_prices.get(sym) %}
-            <div class="ticker-item {% if p and p.change_pct > 0 %}up{% elif p and p.change_pct < 0 %}down{% endif %}" id="ticker-{{ sym.replace('/', '') }}">
+            {% set p = live_prices.get(sym) if live_prices else None %}
+            <div class="ticker-item" id="ticker-{{ sym.replace('/', '') }}">
                 <div class="c-dim small fw-bold">{{ sym }}</div>
-                <div class="fs-5 fw-bold mt-1" id="price-{{ sym.replace('/', '') }}">{{ p.price if p else '—' }}</div>
-                <div class="small {% if p and p.change_pct > 0 %}c-pos{% elif p and p.change_pct < 0 %}c-neg{% else %}c-dim{% endif %}" id="change-{{ sym.replace('/', '') }}">
-                    {% if p and p.change_pct > 0 %}▲{% elif p and p.change_pct < 0 %}▼{% else %}—{% endif %} 
-                    {{ '%+.2f'|format(p.change_pct) if p else '0.00' }}%
+                <div class="fs-5 fw-bold mt-1" id="price-{{ sym.replace('/', '') }}">
+                    {{ p.price if p else '—' }}
+                </div>
+                <div class="small c-dim" id="change-{{ sym.replace('/', '') }}">
+                    — 0.00%
                 </div>
             </div>
         {% endfor %}
@@ -734,134 +735,39 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
+// --- LANGUAGE TOGGLE (No Direction Change) ---
 const i18n = {
-    ar: {
-        market_open: "السوق مفتوح",
-        market_closed: "السوق مغلق",
-        session: "الجلسة",
-        liquidity: "السيولة",
-        live_prices: "الأسعار الحية",
-        signals: "توصيات ICT",
-        analyze_now: "تحليل الآن",
-        no_signals: "لا توصيات حالياً",
-        open_pos: "المراكز المفتوحة",
-        fundamental: "التحليل الأساسي",
-        news: "الأخبار اللحظية",
-        strategies: "أداء الاستراتيجيات (التعلم الذاتي)",
-        strat_name: "الاستراتيجية",
-        strat_weight: "الوزن",
-        strat_wl: "W/L",
-        strat_winrate: "النجاح",
-        balance: "الرصيد",
-        pending: "معلقة",
-        risk: "مخاطرة",
-        pnl: "P&L",
-        win_rate: "نجاح",
-        entry: "الدخول",
-        sl: "وقف الخسارة",
-        tp: "الهدف",
-        approve: "موافقة وتنفيذ",
-        reject: "رفض",
-        score: "Score",
-        strategy: "الاستراتيجية",
-        weight: "الوزن",
-        no_strat: "لا توجد بيانات كافية بعد.",
-        no_news: "لا توجد أخبار.",
-        confirm_execute: "تأكيد تنفيذ الصفقة؟",
-        executed_success: "تم التنفيذ بنجاح",
-        rejected_msg: "مرفوض",
-        analysis_done: "تم التحليل",
-        generated: "تم توليدها",
-        rejected: "مرفوضة",
-        settings: "الإعدادات",
-        capital: "رأس المال ($)",
-        min_score: "أدنى Score",
-        interval: "فاصل التحليل (ث)",
-        style: "نوع الصفقة",
-        timeframes: "الفريمات الزمنية",
-        auto_gen: "توليد تلقائي",
-        auto_analysis: "تفعيل التحليل التلقائي",
-        save: "حفظ الإعدادات"
+    "ar": {
+        "market_open": "السوق مفتوح", "market_closed": "السوق مغلق", "liquidity": "السيولة",
+        "live_prices": "الأسعار الحية", "signals": "توصيات ICT", "analyze_now": "تحليل الآن",
+        "no_signals": "لا توصيات حالياً", "entry": "الدخول", "sl": "وقف الخسارة", "tp": "الهدف",
+        "approve": "موافقة وتنفيذ", "reject": "رفض", "open_pos": "المراكز المفتوحة",
+        "fundamental": "التحليل الأساسي", "news": "الأخبار اللحظية"
     },
-    en: {
-        market_open: "Market Open",
-        market_closed: "Market Closed",
-        session: "Session",
-        liquidity: "Liquidity",
-        live_prices: "Live Prices",
-        signals: "ICT Signals",
-        analyze_now: "Analyze Now",
-        no_signals: "No signals currently",
-        open_pos: "Open Positions",
-        fundamental: "Fundamental Bias",
-        news: "Live News",
-        strategies: "Strategy Performance",
-        strat_name: "Strategy",
-        strat_weight: "Weight",
-        strat_wl: "W/L",
-        strat_winrate: "Win Rate",
-        balance: "Balance",
-        pending: "Pending",
-        risk: "Risk",
-        pnl: "P&L",
-        win_rate: "Win Rate",
-        entry: "Entry",
-        sl: "Stop Loss",
-        tp: "Target",
-        approve: "Approve & Execute",
-        reject: "Reject",
-        score: "Score",
-        strategy: "Strategy",
-        weight: "Weight",
-        no_strat: "Not enough data yet.",
-        no_news: "No recent news.",
-        confirm_execute: "Confirm trade execution?",
-        executed_success: "Executed successfully",
-        rejected_msg: "Rejected",
-        analysis_done: "Analysis complete",
-        generated: "Generated",
-        rejected: "Rejected",
-        settings: "Settings",
-        capital: "Capital ($)",
-        min_score: "Min Score",
-        interval: "Interval (s)",
-        style: "Style",
-        timeframes: "Timeframes",
-        auto_gen: "Auto-generate",
-        auto_analysis: "Enable auto analysis",
-        save: "Save Settings"
+    "en": {
+        "market_open": "Market Open", "market_closed": "Market Closed", "liquidity": "Liquidity",
+        "live_prices": "Live Prices", "signals": "ICT Signals", "analyze_now": "Analyze Now",
+        "no_signals": "No signals currently", "entry": "Entry", "sl": "Stop Loss", "tp": "Target",
+        "approve": "Approve & Execute", "reject": "Reject", "open_pos": "Open Positions",
+        "fundamental": "Fundamental Bias", "news": "Live News"
     }
 };
 
-let currentLang = localStorage.getItem("lang") || "ar";
-
-function applyLanguage() {
-    const isRtl = currentLang === "ar";
-
-    document.documentElement.setAttribute("lang", currentLang);
-    document.documentElement.setAttribute("dir", isRtl ? "rtl" : "ltr");
-
-    const bs = document.getElementById("bootstrap-css");
-    if (bs) {
-        bs.href = isRtl
-            ? "https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css"
-            : "https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css";
-    }
-
-    const btnTxt = document.getElementById("lang-btn-text");
-    if (btnTxt) btnTxt.innerText = isRtl ? "EN" : "AR";
-
-    document.querySelectorAll("[data-i18n]").forEach(function (el) {
-        const key = el.getAttribute("data-i18n");
-        const dict = i18n[currentLang] || i18n.ar;
-        if (dict[key]) el.innerText = dict[key];
-    });
-}
+let currentLang = "ar";
 
 function toggleLanguage() {
     currentLang = currentLang === "ar" ? "en" : "ar";
-    localStorage.setItem("lang", currentLang);
-    applyLanguage();
+    
+    // تغيير نص الزر فقط (بدون تغيير اتجاه الصفحة)
+    document.getElementById("lang-btn-text").innerText = currentLang === "ar" ? "EN" : "AR";
+    
+    // ترجمة النصوص
+    document.querySelectorAll("[data-i18n]").forEach(el => {
+        const key = el.getAttribute("data-i18n");
+        if (i18n[currentLang][key]) {
+            el.innerText = i18n[currentLang][key];
+        }
+    });
 }
 
 async function api(url, method, body) {
@@ -901,19 +807,19 @@ function showToast(message, type = 'success') {
 // SIGNAL ACTIONS
 // ==========================================
 async function approveSignal(uid) {
-    if (!confirm(i18n[currentLang].confirm_execute)) return;
+    if (!confirm("تأكيد تنفيذ الصفقة؟")) return;
     const res = await api("/api/approve/" + uid, "POST");
     if (res.ok) {
-        showToast(i18n[currentLang].executed_success);
+        showToast("تم التنفيذ بنجاح");
         setTimeout(() => location.reload(), 1200);
     } else {
-        showToast(i18n[currentLang].rejected_msg + ": " + (res.error || ""), 'error');
+        showToast("مرفوض: " + (res.error || ""), 'error');
     }
 }
 
 async function rejectSignal(uid) {
     await api("/api/reject/" + uid, "POST");
-    showToast(i18n[currentLang].rejected_msg);
+    showToast("مرفوض");
     setTimeout(() => location.reload(), 800);
 }
 
@@ -933,11 +839,12 @@ async function runAnalysis() {
 }
 
 // ==========================================
-// LIVE PRICES POLLING (Every 3 seconds)
+// LIVE PRICES POLLING (Every 2 seconds)
 // ==========================================
 async function refreshPrices() {
     try {
-        const res = await fetch('/api/live_prices'); // 👈 المسار الصحيح
+        const res = await fetch('/api/live_prices');
+        if (!res.ok) return;
         const data = await res.json();
         
         for (const [sym, p] of Object.entries(data)) {
@@ -945,24 +852,24 @@ async function refreshPrices() {
             const priceEl = document.getElementById('price-' + key);
             const changeEl = document.getElementById('change-' + key);
             const tickerEl = document.getElementById('ticker-' + key);
-            
-            if (priceEl && p.price) {
-                priceEl.innerText = p.price.toFixed(2);
+
+            if (priceEl && p && p.price) {
+                // تحديث السعر
+                priceEl.innerText = parseFloat(p.price).toFixed(2);
                 
+                // تحديث نسبة التغير
                 if (changeEl && tickerEl) {
                     const isUp = p.change_pct > 0;
                     const isDown = p.change_pct < 0;
-                    
-                    changeEl.innerText = (isUp ? '▲' : isDown ? '▼' : '—') + ' ' + (p.change_pct > 0 ? '+' : '') + p.change_pct + '%';
+                    changeEl.innerText = (isUp ? '▲ ' : isDown ? '▼ ' : '— ') + Math.abs(p.change_pct).toFixed(2) + '%';
                     changeEl.className = 'small ' + (isUp ? 'c-pos' : isDown ? 'c-neg' : 'c-dim');
                     tickerEl.className = 'ticker-item ' + (isUp ? 'up' : isDown ? 'down' : '');
                 }
             }
         }
-    } catch (e) { console.error("Price update failed", e); }
+    } catch (e) { console.error(e); }
 }
-// التحديث كل 3 ثوانٍ
-setInterval(refreshPrices, 3000);
+setInterval(refreshPrices, 2000); // تحديث كل ثانيتين
 
 // ==========================================
 // COUNTDOWN TIMER (Top Bar)
@@ -1071,10 +978,8 @@ async function saveSettings() {
 }
 
 // ==========================================
-// INIT
+// AUTO-REFRESH STATE
 // ==========================================
-document.addEventListener("DOMContentLoaded", applyLanguage);
-
 setInterval(async function () {
     try {
         const s = await api("/api/state");
