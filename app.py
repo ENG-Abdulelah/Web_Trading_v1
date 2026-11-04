@@ -186,24 +186,40 @@ def set_lang(l):
 
 
 # =============================================================================
-# LIVE PRICES (from price_feed memory)
+# LIVE PRICES — خفيف من الذاكرة (no network)
 # =============================================================================
-def get_live_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
-    """قراءة الأسعار من الذاكرة الحية التي يملؤها price_feed"""
+@app.route("/api/live_prices")
+def api_live_prices():
+    from price_feed import PRICES, PRICE_LOCK
     with PRICE_LOCK:
         out = {}
-        for sym in symbols:
-            if sym in PRICES:
-                data = PRICES[sym]
-                if data["price"] > 0:
-                    chg = 0.0
-                    if data["prev_close"] > 0:
-                        chg = ((data["price"] - data["prev_close"]) / data["prev_close"]) * 100
-                    out[sym] = {
-                        "price": data["price"],
-                        "change_pct": round(chg, 2),
-                    }
-        return out
+        for sym, data in PRICES.items():
+            if data["price"] > 0:
+                chg = 0.0
+                if data["prev_close"] > 0:
+                    chg = ((data["price"] - data["prev_close"]) / data["prev_close"]) * 100
+                out[sym] = {
+                    "price": data["price"],
+                    "change_pct": round(chg, 2),
+                }
+        return jsonify(out)
+
+
+@app.route("/api/prices")
+def api_prices():
+    from price_feed import PRICES, PRICE_LOCK
+    with PRICE_LOCK:
+        out = {}
+        for sym, data in PRICES.items():
+            if data["price"] > 0:
+                chg = 0.0
+                if data["prev_close"] > 0:
+                    chg = ((data["price"] - data["prev_close"]) / data["prev_close"]) * 100
+                out[sym] = {
+                    "price": data["price"],
+                    "change_pct": round(chg, 2),
+                }
+        return jsonify(out)
 
 
 # =============================================================================
@@ -345,7 +361,7 @@ def run_analysis_cycle() -> Dict[str, Any]:
         USER_SETTINGS["last_cycle_stats"] = stats
         return stats
 
-    biases = {}  # 👈 تم تعطيل الجلب القديم مؤقتاً لتجنب الحظر
+    biases = {}
 
     filters = DB.get_filter_weights()
     open_pos = DB.get_open_positions()
@@ -788,46 +804,37 @@ def start_scheduler() -> None:
 # =============================================================================
 @app.route("/")
 def index():
-    update_positions()
-
     state = market_snapshot()
     pending = DB.get_pending_signals()
     open_pos = DB.get_open_positions()
-    closed = DB.get_closed_trades(limit=30)
     stats = DB.get_stats()
     strategy_stats = DB.get_filter_stats()
 
-    news = build_calendar()
-
-    fundamental_biases = DB.get_all_fundamental_bias()
-    timemachine_cache = {
-        s["signal_uid"]: DB.get_timemachine(s["signal_uid"])
-        for s in pending
-    }
-    live_prices = get_live_prices(SYMBOLS)
-
-    cot_reports = fetch_cot_reports()
-    cpi_data = fetch_cpi_data()
-
-    balance = get_balance()
-    open_risk_pct = RISK._portfolio_risk_pct(open_pos, balance)
+    # جلب الأسعار الحالية بسرعة من الذاكرة (بدون اتصال بالإنترنت)
+    from price_feed import PRICES
+    live_prices = {}
+    for sym, d in PRICES.items():
+        if d["price"] > 0:
+            chg = 0.0
+            if d["prev_close"] > 0:
+                chg = ((d["price"] - d["prev_close"]) / d["prev_close"]) * 100
+            live_prices[sym] = {
+                "price": d["price"],
+                "change_pct": round(chg, 2),
+            }
 
     return render_template(
         "index.html",
         market=state,
         pending_signals=pending,
         open_positions=open_pos,
-        closed_trades=closed,
         stats=stats,
-        balance=balance,
-        open_risk_pct=round(open_risk_pct, 2),
+        balance=get_balance(),
+        open_risk_pct=0.0,
         strategy_stats=strategy_stats,
-        news=news,
-        fundamental_biases=fundamental_biases,
-        timemachine_cache=timemachine_cache,
+        fundamental_biases=DB.get_all_fundamental_bias(),
+        news=build_calendar(),
         live_prices=live_prices,
-        cot_reports=cot_reports,
-        cpi_data=cpi_data,
         settings=USER_SETTINGS,
         symbols=SYMBOLS,
         now=utcnow().strftime("%Y-%m-%d %H:%M UTC"),
@@ -976,17 +983,6 @@ def api_timemachine(signal_uid: str):
     })
 
 
-@app.route("/api/prices")
-def api_prices():
-    return jsonify(get_live_prices(SYMBOLS))
-
-
-@app.route("/api/live_prices")
-def api_live_prices():
-    """مسار خفيف لجلب الأسعار الحية للـ JavaScript"""
-    return jsonify(get_live_prices(SYMBOLS))
-
-
 @app.route("/api/diagnostics")
 def api_diagnostics():
     return jsonify({
@@ -998,7 +994,6 @@ def api_diagnostics():
 
 @app.route("/api/news/refresh", methods=["POST"])
 def api_news_refresh():
-    # لم يعد يستخدم أي API خارجي — يعيد التقويم الثابت
     return jsonify({"ok": True, "count": len(build_calendar())})
 
 
