@@ -1,3 +1,4 @@
+
 # app.py
 """
 Web Trading Bot — Personal Trading Analyst (Flask)
@@ -190,34 +191,39 @@ def set_lang(l):
 # =============================================================================
 @app.route("/api/live_prices")
 def api_live_prices():
-    from price_feed import PRICES, PRICE_LOCK
-    with PRICE_LOCK:
-        out = {}
-        for sym, data in PRICES.items():
-            chg = 0.0
-            if data.get("prev_close", 0) > 0:
-                chg = ((data["price"] - data["prev_close"]) / data["prev_close"]) * 100
-            out[sym] = {
-                "price": data.get("price", 0.0),
-                "change_pct": round(chg, 2)
-            }
-        return jsonify(out)
+    from price_feed import PRICES
+    out = {}
+    for sym, data in PRICES.items():
+        price = data.get("price", 0.0)
+        # حساب التغير التقريبي بناءً على السعر السابق
+        prev = data.get("prev_price", price) 
+        chg = 0.0
+        if prev and prev > 0 and price > 0:
+            chg = ((price - prev) / prev) * 100
+            
+        out[sym] = {
+            "price": price,
+            "change_pct": round(chg, 3)
+        }
+    return jsonify(out)
 
 
 @app.route("/api/prices")
 def api_prices():
-    from price_feed import PRICES, PRICE_LOCK
-    with PRICE_LOCK:
-        out = {}
-        for sym, data in PRICES.items():
-            chg = 0.0
-            if data.get("prev_close", 0) > 0:
-                chg = ((data["price"] - data["prev_close"]) / data["prev_close"]) * 100
-            out[sym] = {
-                "price": data.get("price", 0.0),
-                "change_pct": round(chg, 2)
-            }
-        return jsonify(out)
+    from price_feed import PRICES
+    out = {}
+    for sym, data in PRICES.items():
+        price = data.get("price", 0.0)
+        prev = data.get("prev_price", price) 
+        chg = 0.0
+        if prev and prev > 0 and price > 0:
+            chg = ((price - prev) / prev) * 100
+            
+        out[sym] = {
+            "price": price,
+            "change_pct": round(chg, 3)
+        }
+    return jsonify(out)
 
 
 # =============================================================================
