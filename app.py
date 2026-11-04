@@ -1124,4 +1124,3 @@ def _delayed_start_scheduler():
 
 
 threading.Thread(target=_delayed_start_scheduler, daemon=True).start()
-```
